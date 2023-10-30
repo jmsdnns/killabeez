@@ -35,6 +35,6 @@ Environment variables:
 
 ## Wu-Tang?
 
-Yup. [Da Mystery Of Chessboxin'](https://youtu.be/pJk0p-98Xzc)
-
 _EC2s, are you with me? Where you at?! In the front! In the back! Killa Beez on attack!_
+
+[Nah mean](https://youtu.be/pJk0p-98Xzc)?
