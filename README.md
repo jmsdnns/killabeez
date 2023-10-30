@@ -33,8 +33,9 @@ Environment variables:
 * `AWS_SECRET_KEY`
 
 
-## Wu-Tang?
+## Nah Mean
 
-_EC2s, are you with me? Where you at?! In the front! In the back! Killa Beez on attack!_
+_EC2s, are you with me? Where you at?!_
 
-[Nah mean](https://youtu.be/pJk0p-98Xzc)?
+_In the front! In the back! [Killa Beez](https://youtu.be/pJk0p-98Xzc) on attack!_
+
