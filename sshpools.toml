@@ -1,0 +1,4 @@
+username = "jmsdnns"
+key_file = "~/.ssh/killabeez/id_ed25519.pub"
+tag_name = "killabeez"
+num_beez = 2
