@@ -10,7 +10,6 @@ use aws_sdk_ec2::{
     },
 };
 use std::collections::HashMap;
-use tokio;
 
 use crate::config::AppConfig;
 
@@ -142,8 +141,8 @@ pub async fn create_instances(
             .subnet_id(subnet_id)
             .security_group_ids(sg_id)
             .tag_specifications(tag_specifications.clone())
-            .min_count(ac.num_beez.clone())
-            .max_count(ac.num_beez.clone())
+            .min_count(ac.num_beez)
+            .max_count(ac.num_beez)
             .send()
             .await?;
 
