@@ -158,23 +158,23 @@ impl Swarm {
     ) -> Result<Self, Error> {
         println!("[load_swarm]");
 
-        let network = match AWSNetwork::load_network(client, ac).await {
-            Ok(network) => network,
-            Err(e) => panic!("[load_swarm] ERROR load_network\n{}", e),
-        };
         let key_pair = match Swarm::load_key_pair(client, ac).await {
             Ok(key_id) => key_id,
             Err(e) => panic!("[load_swarm] ERROR load_key_pair\n{}", e),
         };
-        let instances = match Swarm::load_instances(client, ac, &network).await {
-            Ok(instances) => instances,
+        let instance_ids = match Swarm::load_instances(client, ac, network).await {
+            Ok(instance_ids) => instance_ids.clone(),
+            Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        };
+        match aws::ec2::wait_for_instances(client, &instance_ids).await {
+            Ok(_) => println!("[load_swarm] instances online"),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
 
         Ok(Swarm {
             network: network.clone(),
             key_pair: key_pair.clone(),
-            instances: instances.clone(),
+            instances: instance_ids.clone(),
         })
     }
 
@@ -203,7 +203,7 @@ impl Swarm {
     ) -> Result<Vec<String>, Error> {
         println!("[load_instances]");
 
-        let Ok(instance_ips) = aws::ec2::create_instances(
+        let Ok(instance_ids) = aws::ec2::create_instances(
             client,
             &network.vpc_id,
             &network.subnet_id,
@@ -214,8 +214,8 @@ impl Swarm {
         else {
             panic!("[load_instances] Waaaah!");
         };
-        println!("Instances created, IPs: {:?}", instance_ips);
+        println!("[load_instances] instance ids created: {:?}", instance_ids);
 
-        Ok(instance_ips)
+        Ok(instance_ids)
     }
 }
