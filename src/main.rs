@@ -1,9 +1,9 @@
 #![allow(dead_code, unused)]
 
-mod aws;
-mod beez;
+pub mod aws;
 mod cli;
 mod config;
+mod scenarios;
 
 #[tokio::main]
 pub async fn main() {
@@ -13,5 +13,5 @@ pub async fn main() {
         panic!("Booooo");
     };
 
-    cli::run(ac).await
+    cli::run(&ac).await
 }
