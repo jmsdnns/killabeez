@@ -147,7 +147,7 @@ impl AWSNetwork {
 pub struct Swarm {
     network: AWSNetwork,
     key_pair: String,
-    instances: Vec<String>,
+    instance_ips: Vec<String>,
 }
 
 impl Swarm {
@@ -166,15 +166,16 @@ impl Swarm {
             Ok(instance_ids) => instance_ids.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
-        match aws::ec2::wait_for_instances(client, &instance_ids).await {
-            Ok(_) => println!("[load_swarm] instances online"),
+        let instance_ips = match aws::ec2::wait_for_instances(client, &instance_ids).await {
+            Ok(instance_ips) => instance_ips.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
+        println!("[load_swarm] swarm online");
 
         Ok(Swarm {
             network: network.clone(),
             key_pair: key_pair.clone(),
-            instances: instance_ids.clone(),
+            instance_ips: instance_ips.clone(),
         })
     }
 

@@ -294,9 +294,13 @@ pub async fn create_instances(
     Ok(instance_ids)
 }
 
-pub async fn wait_for_instances(client: &Client, instance_ids: &[String]) -> Result<(), Error> {
+pub async fn wait_for_instances(
+    client: &Client,
+    instance_ids: &[String],
+) -> Result<Vec<String>, Error> {
+    let mut public_ips = Vec::new();
+
     loop {
-        // Wait for a while before checking again (e.g., 30 seconds)
         println!("[wait_for_instances] waiting 30 seconds");
         tokio::time::sleep(Duration::from_secs(30)).await;
 
@@ -307,35 +311,42 @@ pub async fn wait_for_instances(client: &Client, instance_ids: &[String]) -> Res
             .await
         {
             Ok(response) => response,
-            Err(e) => continue, // panic!("[wait_for_instances] ERROR {:?}", e),
+            Err(e) => continue,
         };
 
         let mut all_online = true;
 
         for reservation in resp.reservations.unwrap_or_default() {
             for instance in reservation.instances.unwrap_or_default() {
-                if let Some(public_ip) = instance.clone().public_ip_address {
-                    println!(
-                        "[wait_for_instances] instance {} has public IP: {}",
-                        instance.clone().instance_id.unwrap_or_default(),
-                        public_ip
-                    );
-                } else {
-                    println!(
-                        "[wait_for_instances] instance {} has not a public IP",
-                        instance.clone().instance_id.unwrap_or_default()
-                    );
-                }
+                // extract public ip if available, we'll store it if system is running
+                let public_ip = match instance.clone().public_ip_address {
+                    Some(public_ip) => {
+                        println!(
+                            "[wait_for_instances] instance {} has public IP: {}",
+                            instance.clone().instance_id.unwrap_or_default(),
+                            public_ip
+                        );
+                        Some(public_ip)
+                    }
+                    None => {
+                        println!(
+                            "[wait_for_instances] no ip yet for instance {}",
+                            instance.clone().instance_id.unwrap_or_default()
+                        );
+                        None
+                    }
+                };
 
                 if let Some(state_name) = instance.state.clone().unwrap().name() {
                     if state_name != &InstanceStateName::Running {
-                        all_online = false; // Mark as false if any instance is not running
+                        all_online = false;
                         println!(
                             "[wait_for_instances] instance {} is not online, current state: {:?}",
                             instance.instance_id.unwrap_or_default(),
                             state_name
                         );
                     } else {
+                        public_ips.push(public_ip.unwrap().clone());
                         println!(
                             "[wait_for_instances] instance {} is online!",
                             instance.instance_id.unwrap_or_default()
@@ -345,12 +356,11 @@ pub async fn wait_for_instances(client: &Client, instance_ids: &[String]) -> Res
             }
         }
 
-        // If all instances are online, break the loop
         if all_online {
             println!("[wait_for_instances] all instances are online!");
             break;
         }
     }
 
-    Ok(())
+    Ok(public_ips)
 }
