@@ -1,4 +1,8 @@
 username = "jmsdnns"
-key_file = "~/.ssh/killabeez/id_ed25519.pub"
-tag_name = "killabeez"
-num_beez = 2
+key_file = "/home/jmsdnns/.ssh/killabeez/id_ed25519.pub"
+num_beez = 1
+tag_name = "killabeez-test"
+ssh_cidr_block = "0.0.0.0/0"
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
+subnet_id = "subnet-xxxxxxxxxxxxxxxxx"
+security_group_id = "sg-xxxxxxxxxxxxxxxxx"
