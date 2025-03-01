@@ -5,20 +5,18 @@ use tokio;
 pub async fn all_beez_tags() -> Result<(), Error> {
     println!("[all_beez_tags] hey");
 
-    let config = aws_config::load_from_env().await;
+    let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
     println!("[all_beez_tags] config");
 
     let client = Client::new(&config);
     println!("[all_beez_tags] client");
 
-    // Define the tag filter you want to search for
     let tag_filter = TagFilter::builder()
-        .key("Name") // Replace with your tag key
-        .values("killabeez-test") // Replace with your tag value
+        .key("Name")
+        .values("killabeez-test")
         .build();
     println!("[all_beez_tags] tag_filter");
 
-    // Request to get resources with the specific tag
     let result = match client.get_resources().tag_filters(tag_filter).send().await {
         Ok(r) => r,
         Err(e) => panic!(
@@ -28,7 +26,6 @@ pub async fn all_beez_tags() -> Result<(), Error> {
     };
     println!("[all_beez_tags] loaded tagged resources");
 
-    // Process the result (this is just printing out resource ARNs for now)
     if let Some(resources) = result.resource_tag_mapping_list {
         for resource in resources {
             if let Some(arn) = resource.resource_arn {
