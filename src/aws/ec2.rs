@@ -5,13 +5,13 @@ use aws_sdk_ec2::{
     error::SdkError,
     operation::create_vpc::CreateVpcError,
     types::{
-        Instance, InstanceType, IpPermission, IpRange, KeyPairInfo, ResourceType, SecurityGroup,
-        Subnet, Tag, TagSpecification, Vpc,
+        Instance, InstanceStateName, InstanceType, IpPermission, IpRange, KeyPairInfo,
+        ResourceType, SecurityGroup, Subnet, Tag, TagSpecification, Vpc,
         builders::{IpPermissionBuilder, TagSpecificationBuilder},
     },
 };
 use clap::builder::OsStr;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, time::Duration};
 
 use crate::config::AppConfig;
 
@@ -260,29 +260,97 @@ pub async fn create_instances(
     sg_id: &str,
     ac: &AppConfig,
 ) -> Result<Vec<String>, Error> {
-    let tag_specifications = create_tag_spec(ac, ResourceType::Instance);
     println!("[create_instances]");
+    let tag_specifications = create_tag_spec(ac, ResourceType::Instance);
 
-    let mut instance_ips = Vec::new();
+    let response = match client
+        .run_instances()
+        .instance_type(InstanceType::T2Micro)
+        .image_id(ac.ami.clone().unwrap())
+        .key_name(KEY_NAME)
+        .subnet_id(subnet_id)
+        .security_group_ids(sg_id)
+        .tag_specifications(tag_specifications.clone())
+        .min_count(ac.num_beez)
+        .max_count(ac.num_beez)
+        .send()
+        .await
+    {
+        Ok(instances) => instances,
+        Err(e) => panic!("[create_instances] ERROR create {:?}", e),
+    };
 
-    for i in 0..ac.num_beez {
-        let create_instance_response = client
-            .run_instances()
-            .instance_type(InstanceType::T2Micro)
-            .image_id("ami-0c55b159cbfafe1f0")
-            .key_name(KEY_NAME)
-            .subnet_id(subnet_id)
-            .security_group_ids(sg_id)
-            .tag_specifications(tag_specifications.clone())
-            .min_count(ac.num_beez)
-            .max_count(ac.num_beez)
-            .send()
-            .await?;
-        println!("[create_instances] instance {}", i);
-
-        let instance = create_instance_response.instances.unwrap()[0].clone();
-        instance_ips.push(instance.public_ip_address.unwrap());
+    if response.instances().is_empty() {
+        panic!("[create_instances] ERROR no instances created");
     }
 
-    Ok(instance_ips)
+    let instance_ids = response
+        .instances
+        .unwrap()
+        .iter()
+        .map(|i| i.instance_id.clone().unwrap())
+        .collect();
+
+    Ok(instance_ids)
+}
+
+pub async fn wait_for_instances(client: &Client, instance_ids: &[String]) -> Result<(), Error> {
+    loop {
+        // Wait for a while before checking again (e.g., 30 seconds)
+        println!("[wait_for_instances] waiting 30 seconds");
+        tokio::time::sleep(Duration::from_secs(30)).await;
+
+        let resp = match client
+            .describe_instances()
+            .instance_ids(instance_ids.join(","))
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => continue, // panic!("[wait_for_instances] ERROR {:?}", e),
+        };
+
+        let mut all_online = true;
+
+        for reservation in resp.reservations.unwrap_or_default() {
+            for instance in reservation.instances.unwrap_or_default() {
+                if let Some(public_ip) = instance.clone().public_ip_address {
+                    println!(
+                        "[wait_for_instances] instance {} has public IP: {}",
+                        instance.clone().instance_id.unwrap_or_default(),
+                        public_ip
+                    );
+                } else {
+                    println!(
+                        "[wait_for_instances] instance {} has not a public IP",
+                        instance.clone().instance_id.unwrap_or_default()
+                    );
+                }
+
+                if let Some(state_name) = instance.state.clone().unwrap().name() {
+                    if state_name != &InstanceStateName::Running {
+                        all_online = false; // Mark as false if any instance is not running
+                        println!(
+                            "[wait_for_instances] instance {} is not online, current state: {:?}",
+                            instance.instance_id.unwrap_or_default(),
+                            state_name
+                        );
+                    } else {
+                        println!(
+                            "[wait_for_instances] instance {} is online!",
+                            instance.instance_id.unwrap_or_default()
+                        );
+                    }
+                }
+            }
+        }
+
+        // If all instances are online, break the loop
+        if all_online {
+            println!("[wait_for_instances] all instances are online!");
+            break;
+        }
+    }
+
+    Ok(())
 }
