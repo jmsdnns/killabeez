@@ -5,9 +5,10 @@ use aws_sdk_ec2::{
     error::SdkError,
     operation::create_vpc::CreateVpcError,
     types::{
-        Instance, InstanceStateName, InstanceType, IpPermission, IpRange, KeyPairInfo,
-        ResourceType, SecurityGroup, Subnet, Tag, TagSpecification, Vpc,
-        builders::{IpPermissionBuilder, TagSpecificationBuilder},
+        AttributeBooleanValue, Filter, Instance, InstanceStateName, InstanceType, IpPermission,
+        IpRange, KeyPairInfo, NetworkInterface, ResourceType, SecurityGroup, Subnet, Tag,
+        TagSpecification, Vpc,
+        builders::{IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder},
     },
 };
 use clap::builder::OsStr;
@@ -80,13 +81,20 @@ pub async fn create_subnet(client: &Client, ac: &AppConfig) -> Result<Subnet, Er
         .vpc_id(vpc_id.clone())
         .cidr_block("10.0.1.0/24")
         .tag_specifications(tag_specifications)
-        //.availability_zone("us-east-1a")
         .send()
         .await?;
 
     let subnet = response.subnet.unwrap();
     let subnet_id = subnet.subnet_id().unwrap();
     println!("[create_subnet] success {:?}", subnet_id);
+
+    client
+        .modify_subnet_attribute()
+        .subnet_id(subnet_id)
+        .map_public_ip_on_launch(AttributeBooleanValue::builder().value(true).build())
+        .send()
+        .await?;
+    println!("[create_subnet] maps public ip on launch");
 
     Ok(subnet.clone())
 }
@@ -294,6 +302,47 @@ pub async fn create_instances(
     Ok(instance_ids)
 }
 
+pub async fn load_tagged_ips(client: &Client, ac: &AppConfig) -> Result<Vec<String>, Error> {
+    println!("[load_tagged_ips]");
+    let filter = Filter::builder()
+        .name("tag:Name")
+        .values(&ac.tag_name)
+        .build();
+    println!("[load_tagged_ips] filter {:?}", filter);
+
+    //   let public_ip = match instance.clone().public_ip_address {
+
+    match client.describe_instances().filters(filter).send().await {
+        Ok(response) => {
+            let instance_ips: Vec<String> = response
+                .reservations
+                .clone()
+                .unwrap_or_default()
+                .iter()
+                .flat_map(|reservation| {
+                    let reservation_ips = reservation
+                        .instances
+                        .clone()
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|&instance| {
+                            matches!(
+                                instance.clone().state.clone().unwrap().name.unwrap(),
+                                InstanceStateName::Running
+                            )
+                        })
+                        .flat_map(|instance| instance.clone().public_ip_address.clone())
+                        .collect::<Vec<String>>();
+                    reservation_ips
+                })
+                .collect();
+            println!("[load_tagged_ips] ips {:?}", instance_ips);
+            Ok(instance_ips)
+        }
+        Err(e) => panic!("[load_tagged_ips] ERROR {}", e),
+    }
+}
+
 pub async fn wait_for_instances(
     client: &Client,
     instance_ids: &[String],
@@ -318,7 +367,6 @@ pub async fn wait_for_instances(
 
         for reservation in resp.reservations.unwrap_or_default() {
             for instance in reservation.instances.unwrap_or_default() {
-                // extract public ip if available, we'll store it if system is running
                 let public_ip = match instance.clone().public_ip_address {
                     Some(public_ip) => {
                         println!(
