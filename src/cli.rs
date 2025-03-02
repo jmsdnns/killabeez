@@ -71,6 +71,8 @@ pub async fn run(ac: &AppConfig) {
         }
         Commands::Exec { name, script } => {
             println!("[cli exec] {name} {:?}", script);
+            let network = AWSNetwork::load_network(&client, ac).await.unwrap();
+            let swarm = Swarm::load_swarm(&client, ac, &network).await.unwrap();
         }
     }
 }
