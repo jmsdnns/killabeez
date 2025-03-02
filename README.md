@@ -1,23 +1,21 @@
-![the words "killa beez" are on top of a swarm of robotic bees](killabeez.jpg)
+![the words "killa beez" are on top of a swarm of robotic bees](docs/killabeez.jpg)
 
 _A tool for using pools of EC2 instances to do all kinds of things._
 
-This project is new. It needs to do some of the foundational stuff before it will feel polished, so bear with me as I go through those motions.
+This project is new. It needs to do some of the foundational stuff before it will feel polished, so bear with me as I work through that.
+
 
 ## Overview
 
-Let's say you have a web system somewhere and you want to know how much load it can handle. You could do some math and talk about what _should_ happen. You could also try just start slamming the thing and measure what loads make it collapse. This project is built for the latter.
+Let's say you have a web system somewhere and you want to know how much load it can handle. You could do some math and talk about what _should_ happen. You could also just start slamming the thing and measure when it collapses. This project wants you to spit on your hands, hoist the black flag, and go hard for the latter. 🏴‍☠️
 
-In terms of steps, we want to make it easy to turn on / off pools of servers used for load testing, eg. the _beez_. We then want it to be easy to run commands on each of them in parallel. The output is sent back to us where we do something with it and determine what to do next. It gives us the base functionality required for building particular types of tasks, such as HTTP load balancing.
+The main steps:
+1. Load or create a network on AWS
+2. Load or create some number of EC2 instances
+3. Use async pools of SSH connections for parallel control at scale
+4. Use this foundation to create network traffic at arbitrary scale for load testing
 
-```shell
-$ beez init <name> --count 20
-$ beez terminate <name>
-$ beez exec <name> <cmd>
-$ beez exec <name> --script <filepath>
-```
-
-Running `hostname` on 20 machines would look like this:
+Running `hostname` on 20 machines looks like this:
 
 ```shell
 $ beez init thebeez --count 20
@@ -25,14 +23,32 @@ $ beez exec thebeez 'hostname'
 $ beez terminate thebeez
 ```
 
-Upload and then execute a script on every machine in the pool
 
-```shell
-$ beez exec thebeez --script loadtest.sh
-```
+## Session Config
+
+All commands will first read the session config file and then execute in the environment described by the config.
+
+All of the resources created by killabeez are tagged. A config file can also be used to configure ids for vpc, subnet, security group, or SSH key. Tags are currently used to locate & manage EC2 instances according to the session config.
+
+**Required Params**
+- `username`: SSH account username for remote instances
+- `key_file`: SSH public key for remote instances
+- `tag_name`: string used to tag all remote resources
+- `num_beez`: target count of instances running in pool
+
+**Optional Params**
+- `vpc_id`: use this VPC instead of creating one
+- `subnet_id`: use this subnet instead of creating one
+- `security_group_id`: use this security group instead of creating one
+- `ami`: the OS image used to create instances
+- `ssh_cidr_block`: used to restrict SSH access to instances. it is recommended you limit access to just your machine which looks like: _your ip address/32_ or `11.22.33.44/32`
+
 
 ## Nah Mean
 
-_EC2s, are you with me? Where you at?!_
+_EC2s, are you with me? Where you at?!_<br/>
+
+![wu tang](docs/wutang.jpg)
 
 _In the front! In the back! [Killa Beez](https://youtu.be/pJk0p-98Xzc) on attack!_
+
