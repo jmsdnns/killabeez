@@ -10,7 +10,7 @@ use figment::{
 const DEFAULT_SSH_CIDR: &str = "0.0.0.0/0";
 const DEFAULT_AMI: &str = "ami-04b4f1a9cf54c11d0";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SwarmConfig {
     pub username: String,
     pub key_file: String,
