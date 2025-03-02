@@ -2,6 +2,7 @@ use aws_sdk_ec2::waiters::security_group_exists;
 use aws_sdk_ec2::{Client, Error};
 
 use crate::aws;
+use crate::aws::ec2::Bee;
 use crate::config::SwarmConfig;
 
 #[derive(Debug, Clone)]
@@ -145,9 +146,10 @@ impl AWSNetwork {
 
 #[derive(Debug, Clone)]
 pub struct Swarm {
+    config: SwarmConfig,
     network: AWSNetwork,
     key_pair: String,
-    instance_ips: Vec<String>,
+    instances: Vec<Bee>,
 }
 
 impl Swarm {
@@ -162,27 +164,21 @@ impl Swarm {
             Ok(key_id) => key_id,
             Err(e) => panic!("[load_swarm] ERROR load_key_pair\n{}", e),
         };
-        let instance_ids = match Swarm::load_instances(client, sc, network).await {
-            Ok(instance_ids) => instance_ids.clone(),
+        let instances = match Swarm::load_instances(client, sc, network).await {
+            Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
-        let instance_ips = match aws::ec2::wait_for_instances(client, &instance_ids).await {
-            Ok(instance_ips) => instance_ips.clone(),
-            Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        let instances = match aws::ec2::wait_for_running(client, instances).await {
+            Ok(instances) => instances.clone(),
+            Err(e) => panic!("[load_swarm] ERROR wait_for_running\n{}", e),
         };
         println!("[load_swarm] swarm online");
 
-        let instance_ips = match aws::ec2::load_tagged_ips(client, sc).await {
-            Ok(instance_ips) => instance_ips.clone(),
-            Err(e) => panic!("[load_swarm] ERROR load_tagged_ips\n{}", e),
-        };
-        println!("[load_swarm] swarm loaded");
-        println!("{:?}", instance_ips);
-
         Ok(Swarm {
+            config: sc.clone(),
             network: network.clone(),
             key_pair: key_pair.clone(),
-            instance_ips: instance_ips.clone(),
+            instances: instances.clone(),
         })
     }
 
@@ -197,17 +193,17 @@ impl Swarm {
             Ok(key_id) => key_id,
             Err(e) => panic!("[load_swarm] ERROR load_key_pair\n{}", e),
         };
-        let instance_ips = match aws::ec2::load_tagged_ips(client, sc).await {
-            Ok(instance_ips) => instance_ips.clone(),
+        let instances = match aws::ec2::load_tagged(client, sc).await {
+            Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
         println!("[load_swarm] swarm online");
-        println!("{:?}", instance_ips);
 
         Ok(Swarm {
+            config: sc.clone(),
             network: network.clone(),
             key_pair: key_pair.clone(),
-            instance_ips: instance_ips.clone(),
+            instances: instances.clone(),
         })
     }
 
@@ -234,7 +230,7 @@ impl Swarm {
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
-    ) -> Result<Vec<String>, Error> {
+    ) -> Result<Vec<Bee>, Error> {
         println!("[load_instances]");
 
         // 1. load id and ip for all tagged instances

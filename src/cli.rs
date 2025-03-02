@@ -45,7 +45,7 @@ enum Commands {
 pub async fn run(sc: &SwarmConfig) {
     let args = Cli::parse();
 
-    let Ok(client) = ec2::mk_client(sc).await else {
+    let Ok(client) = ec2::mk_client().await else {
         panic!("[cli] error: mk_client");
     };
 

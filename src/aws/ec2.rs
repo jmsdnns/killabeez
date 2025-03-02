@@ -18,7 +18,7 @@ use crate::config::SwarmConfig;
 
 pub const KEY_NAME: &str = "the-beez-kees";
 
-pub async fn mk_client(sc: &SwarmConfig) -> Result<Client, Error> {
+pub async fn mk_client() -> Result<Client, Error> {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
     Ok(Client::new(&config))
 }
@@ -261,13 +261,19 @@ pub async fn describe_key_pair(client: &Client, key_name: &str) -> Result<Vec<Ke
 
 // Instances
 
+#[derive(Debug, Clone)]
+pub struct Bee {
+    pub id: String,
+    pub ip: Option<String>,
+}
+
 pub async fn create_instances(
     client: &Client,
     vpc_id: &str,
     subnet_id: &str,
     sg_id: &str,
     sc: &SwarmConfig,
-) -> Result<Vec<String>, Error> {
+) -> Result<Vec<Bee>, Error> {
     println!("[create_instances]");
     let tag_specifications = create_tag_spec(sc, ResourceType::Instance);
 
@@ -292,29 +298,82 @@ pub async fn create_instances(
         panic!("[create_instances] ERROR no instances created");
     }
 
-    let instance_ids = response
+    let instances = response
         .instances
         .unwrap()
         .iter()
-        .map(|i| i.instance_id.clone().unwrap())
+        .map(|i| Bee {
+            id: i.instance_id.clone().unwrap(),
+            ip: Some(i.public_ip_address.clone().unwrap()),
+        })
         .collect();
 
-    Ok(instance_ids)
+    Ok(instances)
 }
 
-pub async fn load_tagged_ips(client: &Client, sc: &SwarmConfig) -> Result<Vec<String>, Error> {
-    println!("[load_tagged_ips]");
+pub async fn load_tagged(client: &Client, sc: &SwarmConfig) -> Result<Vec<Bee>, Error> {
+    println!("[load_tagged]");
     let filter = Filter::builder()
         .name("tag:Name")
         .values(&sc.tag_name)
         .build();
-    println!("[load_tagged_ips] filter {:?}", filter);
+    println!("[load_tagged] filter {:?}", filter);
 
     //   let public_ip = match instance.clone().public_ip_address {
 
     match client.describe_instances().filters(filter).send().await {
         Ok(response) => {
-            let instance_ips: Vec<String> = response
+            let instance_beez: Vec<Bee> = response
+                .reservations
+                .clone()
+                .unwrap_or_default()
+                .iter()
+                .flat_map(|reservation| {
+                    let reservation_bee = reservation
+                        .instances
+                        .clone()
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|&instance| {
+                            matches!(
+                                instance.clone().state.clone().unwrap().name.unwrap(),
+                                InstanceStateName::Running
+                            )
+                        })
+                        .flat_map(|i| {
+                            Some(Bee {
+                                id: i.instance_id.clone().unwrap(),
+                                ip: Some(i.public_ip_address.clone().unwrap()),
+                            })
+                        })
+                        //.flat_map(|instance| instance.clone().public_ip_address.clone())
+                        .collect::<Vec<Bee>>();
+                    reservation_bee
+                })
+                .collect();
+            println!("[load_tagged] ips {:?}", instance_beez);
+            Ok(instance_beez)
+        }
+        Err(e) => panic!("[load_tagged] ERROR {}", e),
+    }
+}
+
+pub async fn wait_for_running(client: &Client, instances: Vec<Bee>) -> Result<Vec<Bee>, Error> {
+    match client
+        .describe_instances()
+        .instance_ids(
+            instances
+                .iter()
+                .map(|b| b.id.clone())
+                .collect::<Vec<String>>()
+                .join(",")
+                .to_string(),
+        )
+        .send()
+        .await
+    {
+        Ok(response) => {
+            let instances: Vec<Bee> = response
                 .reservations
                 .clone()
                 .unwrap_or_default()
@@ -331,19 +390,25 @@ pub async fn load_tagged_ips(client: &Client, sc: &SwarmConfig) -> Result<Vec<St
                                 InstanceStateName::Running
                             )
                         })
-                        .flat_map(|instance| instance.clone().public_ip_address.clone())
-                        .collect::<Vec<String>>();
+                        .flat_map(|i| {
+                            Some(Bee {
+                                id: i.instance_id.clone().unwrap(),
+                                ip: Some(i.public_ip_address.clone().unwrap()),
+                            })
+                        })
+                        //.flat_map(|instance| instance.clone().public_ip_address.clone())
+                        .collect::<Vec<Bee>>();
                     reservation_ips
                 })
                 .collect();
-            println!("[load_tagged_ips] ips {:?}", instance_ips);
-            Ok(instance_ips)
+            println!("[wait_for_running] ips {:?}", instances);
+            Ok(instances)
         }
-        Err(e) => panic!("[load_tagged_ips] ERROR {}", e),
+        Err(e) => panic!("[wait_for_running] ERROR {}", e),
     }
 }
 
-pub async fn wait_for_instances(
+pub async fn wait_for_instances_OG(
     client: &Client,
     instance_ids: &[String],
 ) -> Result<Vec<String>, Error> {
