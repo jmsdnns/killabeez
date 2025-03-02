@@ -11,7 +11,7 @@ const DEFAULT_SSH_CIDR: &str = "0.0.0.0/0";
 const DEFAULT_AMI: &str = "ami-04b4f1a9cf54c11d0";
 
 #[derive(Debug, Deserialize)]
-pub struct AppConfig {
+pub struct SwarmConfig {
     pub username: String,
     pub key_file: String,
     pub tag_name: String,
@@ -23,22 +23,22 @@ pub struct AppConfig {
     pub ami: Option<String>,
 }
 
-impl AppConfig {
+impl SwarmConfig {
     pub fn read(filename: &str) -> Result<Self, Error> {
-        let mut ac: AppConfig = Figment::new().merge(Toml::file(filename)).extract()?;
+        let mut sc: SwarmConfig = Figment::new().merge(Toml::file(filename)).extract()?;
 
-        let ssh_cidr_block = match &ac.ssh_cidr_block {
+        let ssh_cidr_block = match &sc.ssh_cidr_block {
             None => DEFAULT_SSH_CIDR.to_string(),
             Some(cb) => cb.clone(),
         };
-        ac.ssh_cidr_block = Some(ssh_cidr_block);
+        sc.ssh_cidr_block = Some(ssh_cidr_block);
 
-        let ami = match &ac.ami {
+        let ami = match &sc.ami {
             None => DEFAULT_AMI.to_string(),
             Some(ami) => ami.to_string(),
         };
-        ac.ami = Some(ami);
+        sc.ami = Some(ami);
 
-        Ok(ac)
+        Ok(sc)
     }
 }

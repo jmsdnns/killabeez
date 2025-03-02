@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 use crate::aws::{ec2, tagged};
-use crate::config::AppConfig;
+use crate::config::SwarmConfig;
 use crate::scenarios::{AWSNetwork, Swarm};
 
 #[derive(Debug, Parser)]
@@ -22,15 +22,12 @@ enum Commands {
         count: i32,
     },
 
-    Network {
+    Tagged {
         #[arg(required = true)]
         name: String,
     },
 
-    Tagged {
-        name: String,
-    },
-
+    #[command(arg_required_else_help = true)]
     Terminate {
         #[arg(required = true)]
         name: String,
@@ -45,22 +42,18 @@ enum Commands {
     },
 }
 
-pub async fn run(ac: &AppConfig) {
+pub async fn run(sc: &SwarmConfig) {
     let args = Cli::parse();
 
-    let Ok(client) = ec2::mk_client(ac).await else {
+    let Ok(client) = ec2::mk_client(sc).await else {
         panic!("[cli] error: mk_client");
     };
 
     match args.command {
         Commands::Init { name, count } => {
             println!("[cli init] {name}");
-            let network = AWSNetwork::load_network(&client, ac).await.unwrap();
-            let swarm = Swarm::init_swarm(&client, ac, &network).await.unwrap();
-        }
-        Commands::Network { name } => {
-            println!("[cli network] {name}");
-            AWSNetwork::load_network(&client, ac).await;
+            let network = AWSNetwork::load_network(&client, sc).await.unwrap();
+            let swarm = Swarm::init_swarm(&client, sc, &network).await.unwrap();
         }
         Commands::Tagged { name } => {
             println!("[cli tagged] {name}");
@@ -71,8 +64,8 @@ pub async fn run(ac: &AppConfig) {
         }
         Commands::Exec { name, script } => {
             println!("[cli exec] {name} {:?}", script);
-            let network = AWSNetwork::load_network(&client, ac).await.unwrap();
-            let swarm = Swarm::load_swarm(&client, ac, &network).await.unwrap();
+            let network = AWSNetwork::load_network(&client, sc).await.unwrap();
+            let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
         }
     }
 }

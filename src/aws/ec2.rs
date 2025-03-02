@@ -14,22 +14,22 @@ use aws_sdk_ec2::{
 use clap::builder::OsStr;
 use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, time::Duration};
 
-use crate::config::AppConfig;
+use crate::config::SwarmConfig;
 
 pub const KEY_NAME: &str = "the-beez-kees";
 
-pub async fn mk_client(ac: &AppConfig) -> Result<Client, Error> {
+pub async fn mk_client(sc: &SwarmConfig) -> Result<Client, Error> {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
     Ok(Client::new(&config))
 }
 
-fn create_tag_spec(ac: &AppConfig, rt: ResourceType) -> TagSpecification {
+fn create_tag_spec(sc: &SwarmConfig, rt: ResourceType) -> TagSpecification {
     TagSpecification::builder()
         .resource_type(rt)
         .tags(
             Tag::builder()
                 .key("Name")
-                .value(ac.tag_name.clone())
+                .value(sc.tag_name.clone())
                 .build(),
         )
         .build()
@@ -37,8 +37,8 @@ fn create_tag_spec(ac: &AppConfig, rt: ResourceType) -> TagSpecification {
 
 // VPCs
 
-pub async fn create_vpc(client: &Client, ac: &AppConfig) -> Result<Vpc, Error> {
-    let tag_specifications = create_tag_spec(ac, ResourceType::Vpc);
+pub async fn create_vpc(client: &Client, sc: &SwarmConfig) -> Result<Vpc, Error> {
+    let tag_specifications = create_tag_spec(sc, ResourceType::Vpc);
     println!("[create_vpc]");
     println!("[create_vpc] tags: {:?}", tag_specifications);
 
@@ -70,10 +70,10 @@ pub async fn describe_vpc(client: &Client, vpc_id: &str) -> Result<Vec<Vpc>, Err
 
 // Subnets
 
-pub async fn create_subnet(client: &Client, ac: &AppConfig) -> Result<Subnet, Error> {
-    let vpc_id = ac.vpc_id.as_ref().unwrap();
-    let tag_specifications = create_tag_spec(ac, ResourceType::Subnet);
-    println!("[create_subnet] vpc_id {}", &ac.vpc_id.as_ref().unwrap());
+pub async fn create_subnet(client: &Client, sc: &SwarmConfig) -> Result<Subnet, Error> {
+    let vpc_id = sc.vpc_id.as_ref().unwrap();
+    let tag_specifications = create_tag_spec(sc, ResourceType::Subnet);
+    println!("[create_subnet] vpc_id {}", &sc.vpc_id.as_ref().unwrap());
     println!("[create_subnet] tags: {:?}", tag_specifications);
 
     let response = client
@@ -113,10 +113,10 @@ pub async fn describe_subnet(client: &Client, subnet_id: &str) -> Result<Vec<Sub
 
 // Security Groups
 
-pub async fn create_security_group(client: &Client, ac: &AppConfig) -> Result<String, Error> {
-    let vpc_id = ac.vpc_id.as_ref().unwrap();
-    let tag_specifications = create_tag_spec(ac, ResourceType::SecurityGroup);
-    let ssh_cidr_block = ac.ssh_cidr_block.as_ref().unwrap();
+pub async fn create_security_group(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+    let vpc_id = sc.vpc_id.as_ref().unwrap();
+    let tag_specifications = create_tag_spec(sc, ResourceType::SecurityGroup);
+    let ssh_cidr_block = sc.ssh_cidr_block.as_ref().unwrap();
     println!("[create_security_group] vpc_id {:?}", vpc_id);
     println!("[create_security_group] tags {:?}", tag_specifications);
     println!("[create_security_group] ssh cidr {:?}", ssh_cidr_block);
@@ -205,21 +205,21 @@ pub async fn describe_security_group(
 
 pub async fn import_key_pair(
     client: &Client,
-    ac: &AppConfig,
+    sc: &SwarmConfig,
     key_name: &str,
 ) -> Result<String, Error> {
     println!("[import_key_pair] name {}", key_name);
-    println!("[import_key_pair] key_file {}", ac.key_file.clone());
+    println!("[import_key_pair] key_file {}", sc.key_file.clone());
 
-    let tag_specifications = create_tag_spec(ac, ResourceType::KeyPair);
+    let tag_specifications = create_tag_spec(sc, ResourceType::KeyPair);
 
-    let key_path = PathBuf::from(ac.key_file.clone());
+    let key_path = PathBuf::from(sc.key_file.clone());
     println!(
         "[import_key_pair] key_file {:?}",
         fs::canonicalize(&key_path)
     );
 
-    let key_material = match std::fs::read_to_string(ac.key_file.clone()) {
+    let key_material = match std::fs::read_to_string(sc.key_file.clone()) {
         Ok(key_material) => key_material,
         Err(e) => panic!("[key material] read_to_string\n{}", e),
     };
@@ -266,21 +266,21 @@ pub async fn create_instances(
     vpc_id: &str,
     subnet_id: &str,
     sg_id: &str,
-    ac: &AppConfig,
+    sc: &SwarmConfig,
 ) -> Result<Vec<String>, Error> {
     println!("[create_instances]");
-    let tag_specifications = create_tag_spec(ac, ResourceType::Instance);
+    let tag_specifications = create_tag_spec(sc, ResourceType::Instance);
 
     let response = match client
         .run_instances()
         .instance_type(InstanceType::T2Micro)
-        .image_id(ac.ami.clone().unwrap())
+        .image_id(sc.ami.clone().unwrap())
         .key_name(KEY_NAME)
         .subnet_id(subnet_id)
         .security_group_ids(sg_id)
         .tag_specifications(tag_specifications.clone())
-        .min_count(ac.num_beez)
-        .max_count(ac.num_beez)
+        .min_count(sc.num_beez)
+        .max_count(sc.num_beez)
         .send()
         .await
     {
@@ -302,11 +302,11 @@ pub async fn create_instances(
     Ok(instance_ids)
 }
 
-pub async fn load_tagged_ips(client: &Client, ac: &AppConfig) -> Result<Vec<String>, Error> {
+pub async fn load_tagged_ips(client: &Client, sc: &SwarmConfig) -> Result<Vec<String>, Error> {
     println!("[load_tagged_ips]");
     let filter = Filter::builder()
         .name("tag:Name")
-        .values(&ac.tag_name)
+        .values(&sc.tag_name)
         .build();
     println!("[load_tagged_ips] filter {:?}", filter);
 
