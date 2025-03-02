@@ -5,9 +5,9 @@ _A tool for using pools of EC2 instances to do all kinds of things._
 This project is new. It needs to do some of the foundational stuff before it will feel polished, so bear with me as I work through that.
 
 
-## Overview
+## Overview 🏴‍☠️
 
-Let's say you have a web system somewhere and you want to know how much load it can handle. You could do some math and talk about what _should_ happen. You could also just start slamming the thing and measure when it collapses. This project wants you to spit on your hands, hoist the black flag, and go hard for the latter. 🏴‍☠️
+Let's say you have a web system somewhere and you want to know how much load it can handle. You could do some math and talk about what _should_ happen. You could also just start slamming the thing and measure when it collapses. This project wants you to spit on your hands, hoist the black flag, and go hard for the latter.
 
 The main steps:
 1. Load or create a network on AWS
