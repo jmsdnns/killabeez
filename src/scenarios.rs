@@ -172,6 +172,46 @@ impl Swarm {
         };
         println!("[load_swarm] swarm online");
 
+        let instance_ips = match aws::ec2::load_tagged_ips(client, ac).await {
+            Ok(instance_ips) => instance_ips.clone(),
+            Err(e) => panic!("[load_swarm] ERROR load_tagged_ips\n{}", e),
+        };
+        println!("[load_swarm] swarm loaded");
+        println!("{:?}", instance_ips);
+
+        Ok(Swarm {
+            network: network.clone(),
+            key_pair: key_pair.clone(),
+            instance_ips: instance_ips.clone(),
+        })
+    }
+
+    pub async fn load_swarm(
+        client: &Client,
+        ac: &AppConfig,
+        network: &AWSNetwork,
+    ) -> Result<Self, Error> {
+        println!("[load_swarm]");
+
+        let key_pair = match Swarm::load_key_pair(client, ac).await {
+            Ok(key_id) => key_id,
+            Err(e) => panic!("[load_swarm] ERROR load_key_pair\n{}", e),
+        };
+        // let instance_ids = match Swarm::load_instances(client, ac, network).await {
+        //     Ok(instance_ids) => instance_ids.clone(),
+        //     Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        // };
+        // let instance_ips = match aws::ec2::wait_for_instances(client, &instance_ids).await {
+        //     Ok(instance_ips) => instance_ips.clone(),
+        //     Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        // };
+        let instance_ips = match aws::ec2::load_tagged_ips(client, ac).await {
+            Ok(instance_ips) => instance_ips.clone(),
+            Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        };
+        println!("[load_swarm] swarm online");
+        println!("{:?}", instance_ips);
+
         Ok(Swarm {
             network: network.clone(),
             key_pair: key_pair.clone(),
@@ -193,6 +233,7 @@ impl Swarm {
             };
             Ok(key_id.clone())
         } else {
+            // NOTE: would be better to handle multiple keys with some intention
             Ok(existing.first().unwrap().key_pair_id.clone().unwrap())
         }
     }
