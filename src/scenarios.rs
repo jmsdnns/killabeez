@@ -153,7 +153,7 @@ pub struct Swarm {
 }
 
 impl Swarm {
-    pub async fn init_swarm(
+    pub async fn load_swarm(
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
@@ -168,36 +168,6 @@ impl Swarm {
             Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
-        let instances = match aws::ec2::wait_for_running(client, instances).await {
-            Ok(instances) => instances.clone(),
-            Err(e) => panic!("[load_swarm] ERROR wait_for_running\n{}", e),
-        };
-        println!("[load_swarm] swarm online");
-
-        Ok(Swarm {
-            config: sc.clone(),
-            network: network.clone(),
-            key_pair: key_pair.clone(),
-            instances: instances.clone(),
-        })
-    }
-
-    pub async fn load_swarm(
-        client: &Client,
-        sc: &SwarmConfig,
-        network: &AWSNetwork,
-    ) -> Result<Self, Error> {
-        println!("[load_swarm]");
-
-        let key_pair = match Swarm::load_key_pair(client, sc).await {
-            Ok(key_id) => key_id,
-            Err(e) => panic!("[load_swarm] ERROR load_key_pair\n{}", e),
-        };
-        let instances = match aws::ec2::load_tagged(client, sc).await {
-            Ok(instances) => instances.clone(),
-            Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
-        };
-        println!("[load_swarm] swarm online");
 
         Ok(Swarm {
             config: sc.clone(),
@@ -233,24 +203,45 @@ impl Swarm {
     ) -> Result<Vec<Bee>, Error> {
         println!("[load_instances]");
 
-        // 1. load id and ip for all tagged instances
-        // 2. create or terminate instances so count match appconfig
-        // 3. return id & ip
+        // load id and ip for all tagged instances
+        let instances = match aws::ec2::describe_tagged(client, sc).await {
+            Ok(instances) => instances.clone(),
+            Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
+        };
+        println!("[load_instances] existing {}", instances.len());
 
-        // let Ok(instance_ids) = aws::ec2::create_instances(
-        //     client,
-        //     &network.vpc_id,
-        //     &network.subnet_id,
-        //     &network.security_group_id,
-        //     sc,
-        // )
-        // .await
-        // else {
-        //     panic!("[load_instances] Waaaah!");
-        // };
-        // println!("[load_instances] instance ids created: {:?}", instance_ids);
+        // create or terminate instances so count match appconfig
+        let num_instances = instances.len() as i32;
+        let beez = match sc.num_beez {
+            // start additional instances
+            num_beez if num_beez > num_instances => {
+                let additional = num_beez - num_instances;
+                println!("[load_instances] adding instances {}", additional);
+                aws::ec2::create_instances(client, sc, network, Some(additional))
+                    .await
+                    .unwrap()
+            }
 
-        // Ok(instance_ids)
-        todo!()
+            // terminate excess instances
+            num_beez if num_beez < num_instances => {
+                let excess = num_instances - num_beez;
+                panic!("[load_instances] remove instances {}", excess);
+            }
+
+            // correct number are ready
+            _ => {
+                println!("[load_instances] right number instances");
+                instances
+            }
+        };
+
+        // wait for all to be fully initialized
+        let beez = match aws::ec2::wait_for_running(client, beez).await {
+            Ok(instances) => instances.clone(),
+            Err(e) => panic!("[load_instances] ERROR wait_for_running\n{}", e),
+        };
+        println!("[load_instances] swarm online");
+
+        Ok(beez)
     }
 }
