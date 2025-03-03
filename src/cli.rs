@@ -53,7 +53,7 @@ pub async fn run(sc: &SwarmConfig) {
         Commands::Init { name, count } => {
             println!("[cli init] {name}");
             let network = AWSNetwork::load_network(&client, sc).await.unwrap();
-            let swarm = Swarm::init_swarm(&client, sc, &network).await.unwrap();
+            let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
         }
         Commands::Tagged { name } => {
             println!("[cli tagged] {name}");
