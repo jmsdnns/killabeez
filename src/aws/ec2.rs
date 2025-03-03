@@ -271,13 +271,13 @@ pub async fn create_instances(
     client: &Client,
     sc: &SwarmConfig,
     network: &AWSNetwork,
-    fill_count: Option<i32>,
+    count_delta: Option<i32>,
 ) -> Result<Vec<Bee>, Error> {
     println!("[create_instances]");
     let tag_specifications = create_tag_spec(sc, ResourceType::Instance);
 
-    let new_beez = match fill_count {
-        Some(count) => count,
+    let new_beez = match count_delta {
+        Some(cd) => cd,
         None => sc.num_beez,
     };
 
