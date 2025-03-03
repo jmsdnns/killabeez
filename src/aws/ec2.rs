@@ -12,9 +12,9 @@ use aws_sdk_ec2::{
     },
 };
 use clap::builder::OsStr;
-use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, time::Duration};
+use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, ptr::read, time::Duration};
 
-use crate::config::SwarmConfig;
+use crate::{config::SwarmConfig, scenarios::AWSNetwork};
 
 pub const KEY_NAME: &str = "the-beez-kees";
 
@@ -269,24 +269,28 @@ pub struct Bee {
 
 pub async fn create_instances(
     client: &Client,
-    vpc_id: &str,
-    subnet_id: &str,
-    sg_id: &str,
     sc: &SwarmConfig,
+    network: &AWSNetwork,
+    fill_count: Option<i32>,
 ) -> Result<Vec<Bee>, Error> {
     println!("[create_instances]");
     let tag_specifications = create_tag_spec(sc, ResourceType::Instance);
+
+    let new_beez = match fill_count {
+        Some(count) => count,
+        None => sc.num_beez,
+    };
 
     let response = match client
         .run_instances()
         .instance_type(InstanceType::T2Micro)
         .image_id(sc.ami.clone().unwrap())
         .key_name(KEY_NAME)
-        .subnet_id(subnet_id)
-        .security_group_ids(sg_id)
+        .subnet_id(network.subnet_id.clone())
+        .security_group_ids(network.security_group_id.clone())
         .tag_specifications(tag_specifications.clone())
-        .min_count(sc.num_beez)
-        .max_count(sc.num_beez)
+        .min_count(new_beez)
+        .max_count(new_beez)
         .send()
         .await
     {
@@ -304,176 +308,89 @@ pub async fn create_instances(
         .iter()
         .map(|i| Bee {
             id: i.instance_id.clone().unwrap(),
-            ip: Some(i.public_ip_address.clone().unwrap()),
+            ip: i.public_ip_address.clone(),
         })
         .collect();
 
     Ok(instances)
 }
 
-pub async fn load_tagged(client: &Client, sc: &SwarmConfig) -> Result<Vec<Bee>, Error> {
+pub enum BeeLoader {
+    Ids(Vec<Bee>),
+    Tagged(String),
+}
+
+pub async fn describe_instances(client: &Client, loader: BeeLoader) -> Result<Vec<Bee>, Error> {
+    println!("[describe_instances]");
+
+    let request = match loader {
+        BeeLoader::Ids(ids) => match ids.len() {
+            0 => None,
+            _ => Some(
+                client
+                    .describe_instances()
+                    .set_instance_ids(Some(
+                        ids.iter().map(|b| b.id.clone()).collect::<Vec<String>>(),
+                    ))
+                    .send(),
+            ),
+        },
+        BeeLoader::Tagged(tag) => {
+            let filter = Filter::builder().name("tag:Name").values(tag).build();
+            Some(client.describe_instances().filters(filter).send())
+        }
+    };
+
+    match request {
+        None => Ok(Vec::new()),
+        Some(loader) => match loader.await {
+            Ok(response) => Ok(response
+                .reservations
+                .clone()
+                .unwrap_or_default()
+                .iter()
+                .flat_map(|r| {
+                    r.instances
+                        .clone()
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|&i| {
+                            matches!(
+                                i.clone().state.clone().unwrap().name.unwrap(),
+                                InstanceStateName::Running
+                            )
+                        })
+                        .flat_map(|i| {
+                            Some(Bee {
+                                id: i.instance_id.clone().unwrap(),
+                                ip: i.public_ip_address.clone(),
+                            })
+                        })
+                        .collect::<Vec<Bee>>()
+                })
+                .collect::<Vec<Bee>>()),
+            Err(e) => panic!("[load_tagged] ERROR {}", e),
+        },
+    }
+}
+
+pub async fn describe_tagged(client: &Client, sc: &SwarmConfig) -> Result<Vec<Bee>, Error> {
     println!("[load_tagged]");
-    let filter = Filter::builder()
-        .name("tag:Name")
-        .values(&sc.tag_name)
-        .build();
-    println!("[load_tagged] filter {:?}", filter);
-
-    //   let public_ip = match instance.clone().public_ip_address {
-
-    match client.describe_instances().filters(filter).send().await {
-        Ok(response) => {
-            let instance_beez: Vec<Bee> = response
-                .reservations
-                .clone()
-                .unwrap_or_default()
-                .iter()
-                .flat_map(|reservation| {
-                    let reservation_bee = reservation
-                        .instances
-                        .clone()
-                        .unwrap_or_default()
-                        .iter()
-                        .filter(|&instance| {
-                            matches!(
-                                instance.clone().state.clone().unwrap().name.unwrap(),
-                                InstanceStateName::Running
-                            )
-                        })
-                        .flat_map(|i| {
-                            Some(Bee {
-                                id: i.instance_id.clone().unwrap(),
-                                ip: Some(i.public_ip_address.clone().unwrap()),
-                            })
-                        })
-                        //.flat_map(|instance| instance.clone().public_ip_address.clone())
-                        .collect::<Vec<Bee>>();
-                    reservation_bee
-                })
-                .collect();
-            println!("[load_tagged] ips {:?}", instance_beez);
-            Ok(instance_beez)
-        }
-        Err(e) => panic!("[load_tagged] ERROR {}", e),
-    }
+    describe_instances(client, BeeLoader::Tagged(sc.tag_name.clone())).await
 }
 
-pub async fn wait_for_running(client: &Client, instances: Vec<Bee>) -> Result<Vec<Bee>, Error> {
-    match client
-        .describe_instances()
-        .instance_ids(
-            instances
-                .iter()
-                .map(|b| b.id.clone())
-                .collect::<Vec<String>>()
-                .join(",")
-                .to_string(),
-        )
-        .send()
-        .await
-    {
-        Ok(response) => {
-            let instances: Vec<Bee> = response
-                .reservations
-                .clone()
-                .unwrap_or_default()
-                .iter()
-                .flat_map(|reservation| {
-                    let reservation_ips = reservation
-                        .instances
-                        .clone()
-                        .unwrap_or_default()
-                        .iter()
-                        .filter(|&instance| {
-                            matches!(
-                                instance.clone().state.clone().unwrap().name.unwrap(),
-                                InstanceStateName::Running
-                            )
-                        })
-                        .flat_map(|i| {
-                            Some(Bee {
-                                id: i.instance_id.clone().unwrap(),
-                                ip: Some(i.public_ip_address.clone().unwrap()),
-                            })
-                        })
-                        //.flat_map(|instance| instance.clone().public_ip_address.clone())
-                        .collect::<Vec<Bee>>();
-                    reservation_ips
-                })
-                .collect();
-            println!("[wait_for_running] ips {:?}", instances);
-            Ok(instances)
-        }
-        Err(e) => panic!("[wait_for_running] ERROR {}", e),
-    }
-}
-
-pub async fn wait_for_instances_OG(
-    client: &Client,
-    instance_ids: &[String],
-) -> Result<Vec<String>, Error> {
-    let mut public_ips = Vec::new();
-
+pub async fn wait_for_running(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
+    println!("[wait_for_running]");
     loop {
-        println!("[wait_for_instances] waiting 30 seconds");
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        let running_beez = describe_instances(client, BeeLoader::Ids(beez.clone())).await;
+        let running_beez = running_beez.unwrap();
 
-        let resp = match client
-            .describe_instances()
-            .instance_ids(instance_ids.join(","))
-            .send()
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => continue,
-        };
-
-        let mut all_online = true;
-
-        for reservation in resp.reservations.unwrap_or_default() {
-            for instance in reservation.instances.unwrap_or_default() {
-                let public_ip = match instance.clone().public_ip_address {
-                    Some(public_ip) => {
-                        println!(
-                            "[wait_for_instances] instance {} has public IP: {}",
-                            instance.clone().instance_id.unwrap_or_default(),
-                            public_ip
-                        );
-                        Some(public_ip)
-                    }
-                    None => {
-                        println!(
-                            "[wait_for_instances] no ip yet for instance {}",
-                            instance.clone().instance_id.unwrap_or_default()
-                        );
-                        None
-                    }
-                };
-
-                if let Some(state_name) = instance.state.clone().unwrap().name() {
-                    if state_name != &InstanceStateName::Running {
-                        all_online = false;
-                        println!(
-                            "[wait_for_instances] instance {} is not online, current state: {:?}",
-                            instance.instance_id.unwrap_or_default(),
-                            state_name
-                        );
-                    } else {
-                        public_ips.push(public_ip.unwrap().clone());
-                        println!(
-                            "[wait_for_instances] instance {} is online!",
-                            instance.instance_id.unwrap_or_default()
-                        );
-                    }
-                }
-            }
+        // return Ok when counts match
+        let delta = beez.len() - running_beez.len();
+        if delta == 0 {
+            return Ok(running_beez.clone());
         }
-
-        if all_online {
-            println!("[wait_for_instances] all instances are online!");
-            break;
-        }
+        println!("[wait_for_running] waiting 15 seconds for {} beez", delta);
+        tokio::time::sleep(Duration::from_secs(15)).await;
     }
-
-    Ok(public_ips)
 }
