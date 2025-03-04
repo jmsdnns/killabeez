@@ -65,6 +65,23 @@ impl VPC {
         println!("[VPC.describe] success {:?}", vpcs.len());
         Ok(vpcs)
     }
+
+    pub async fn delete(client: &Client, vpc_id: &str) -> Result<(), Error> {
+        match client
+            .delete_vpc()
+            .set_vpc_id(Some(vpc_id.to_string()))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                println!("[VPC.delete] success {}", vpc_id);
+                Ok(())
+            }
+            Err(e) => {
+                panic!("[VPC.delete] ERROR {}", e);
+            }
+        }
+    }
 }
 
 // Subnets
@@ -110,6 +127,23 @@ impl Subnet {
         let subnets = response.subnets.unwrap();
         println!("[Subnet.describe] success {:?}", subnets.len());
         Ok(subnets)
+    }
+
+    pub async fn delete(client: &Client, subnet_id: &str) -> Result<(), Error> {
+        match client
+            .delete_subnet()
+            .set_subnet_id(Some(subnet_id.to_string()))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                println!("[Subnet.delete] success {}", subnet_id);
+                Ok(())
+            }
+            Err(e) => {
+                panic!("[Subnet.delete] ERROR {}", e);
+            }
+        }
     }
 }
 
@@ -204,6 +238,23 @@ impl SecurityGroup {
         );
         Ok(security_groups)
     }
+
+    pub async fn delete(client: &Client, security_group_id: &str) -> Result<(), Error> {
+        match client
+            .delete_security_group()
+            .set_group_id(Some(security_group_id.to_string()))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                println!("[SecurityGroup.delete] success {}", security_group_id);
+                Ok(())
+            }
+            Err(e) => {
+                panic!("[SecurityGroup.delete] ERROR {}", e);
+            }
+        }
+    }
 }
 
 // Key Pairs
@@ -263,6 +314,23 @@ impl SSHKey {
             Err(e) => {
                 println!("[SSHKey.describe] no key found");
                 Ok(Vec::new())
+            }
+        }
+    }
+
+    pub async fn delete(client: &Client, key_name: &str) -> Result<(), Error> {
+        match client
+            .delete_key_pair()
+            .set_key_name(Some(key_name.to_string()))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                println!("[SSHKey.delete] success {}", key_name);
+                Ok(())
+            }
+            Err(e) => {
+                panic!("[SSHKey.delete] ERROR {}", e);
             }
         }
     }
@@ -386,6 +454,48 @@ impl Instances {
                     })
                     .collect::<Vec<Bee>>()),
                 Err(e) => panic!("[load_tagged] ERROR {}", e),
+            },
+        }
+    }
+
+    pub async fn delete(
+        client: &Client,
+        sc: &SwarmConfig,
+        matcher: BeeLoader,
+    ) -> Result<(), Error> {
+        // multiple branches below need this
+        let request_termination = |beez: Vec<Bee>| {
+            Some(
+                client
+                    .terminate_instances()
+                    .set_instance_ids(Some(
+                        beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>(),
+                    ))
+                    .send(),
+            )
+        };
+
+        let request = match matcher {
+            BeeLoader::Ids(beez) => match beez.len() {
+                0 => None,
+                _ => request_termination(beez),
+            },
+            BeeLoader::Tagged(tag) => match Instances::tagged(client, sc).await {
+                Ok(beez) => request_termination(beez),
+                _ => None,
+            },
+        };
+
+        match request {
+            None => Ok(()),
+            Some(response) => match response.await {
+                Ok(response) => {
+                    println!("[Instances.delete {:?}", response.terminating_instances);
+                    Ok(())
+                }
+                Err(e) => {
+                    panic!("Error terminating instances: {}", e);
+                }
             },
         }
     }
