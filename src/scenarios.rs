@@ -2,7 +2,9 @@ use aws_sdk_ec2::waiters::security_group_exists;
 use aws_sdk_ec2::{Client, Error};
 
 use crate::aws;
-use crate::aws::ec2::{Bee, Instances, SSHKey, SecurityGroup, Subnet, VPC};
+use crate::aws::ec2::{
+    Bee, BeeMatcher, Instances, ResourceMatcher, SSHKey, SecurityGroup, Subnet, VPC,
+};
 use crate::config::SwarmConfig;
 
 #[derive(Debug, Clone)]
@@ -41,8 +43,10 @@ impl AWSNetwork {
 
         let existing_vpc_id = match sc.vpc_id.clone() {
             Some(sc_vpc_id) => {
-                let Ok(vpcs) = VPC::describe(client, &sc_vpc_id).await else {
-                    panic!("[load_vpc] ERROR describe vpc_id failed {:?}", sc_vpc_id);
+                let m = &ResourceMatcher::Id(vec![sc_vpc_id.clone()]);
+                let vpcs = match VPC::describe(client, m).await {
+                    Ok(vpcs) => vpcs,
+                    Err(e) => panic!("[load_vpc] ERROR load_vpc {:?}", e),
                 };
                 if vpcs.is_empty() {
                     None
@@ -76,11 +80,10 @@ impl AWSNetwork {
 
         let existing_subnet_id = match sc.subnet_id.clone() {
             Some(sc_subnet_id) => {
-                let Ok(subnets) = Subnet::describe(client, &sc_subnet_id).await else {
-                    panic!(
-                        "[load_subnet] ERROR describe subnet_id failed {:?}",
-                        sc_subnet_id
-                    );
+                let m = &ResourceMatcher::Id(vec![sc_subnet_id.clone()]);
+                let subnets = match Subnet::describe(client, m).await {
+                    Ok(subnets) => subnets,
+                    Err(e) => panic!("[load_subnet] ERROR describe {:?}", e),
                 };
                 if subnets.is_empty() {
                     None
@@ -109,13 +112,10 @@ impl AWSNetwork {
 
         let existing_sg_id = match sc.security_group_id.clone() {
             Some(sc_security_group_id) => {
-                let Ok(security_groups) =
-                    SecurityGroup::describe(client, &sc_security_group_id).await
-                else {
-                    panic!(
-                        "[load_security_group] ERROR describe security_group_id failed {:?}",
-                        sc_security_group_id
-                    );
+                let m = &ResourceMatcher::Id(vec![sc_security_group_id.clone()]);
+                let security_groups = match SecurityGroup::describe(client, m).await {
+                    Ok(sgs) => sgs,
+                    Err(e) => panic!("[load_security_group] ERROR {:?}", e),
                 };
                 if security_groups.is_empty() {
                     None
@@ -204,7 +204,8 @@ impl Swarm {
         println!("[load_instances]");
 
         // load id and ip for all tagged instances
-        let instances = match Instances::tagged(client, sc).await {
+        let m = &BeeMatcher::Tagged(sc.tag_name.clone());
+        let instances = match Instances::describe(client, m).await {
             Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };

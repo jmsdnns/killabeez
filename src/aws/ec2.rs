@@ -31,6 +31,19 @@ fn create_tag_spec(sc: &SwarmConfig, rt: types::ResourceType) -> types::TagSpeci
         .build()
 }
 
+/// Beez can be loaded via id list or a resource tag
+pub enum ResourceMatcher {
+    Id(Vec<String>),
+    Tagged(String),
+}
+
+fn create_tag_filter(tag: &str) -> types::Filter {
+    types::Filter::builder()
+        .name("tag:Name")
+        .values(tag)
+        .build()
+}
+
 // VPCs
 
 pub struct VPC {}
@@ -54,16 +67,32 @@ impl VPC {
         Ok(vpc.clone())
     }
 
-    pub async fn describe(client: &Client, vpc_id: &str) -> Result<Vec<types::Vpc>, Error> {
-        println!("[VPC.describe] vpc_id {}", vpc_id);
-
-        let Ok(response) = client.describe_vpcs().vpc_ids(vpc_id).send().await else {
-            panic!("[VPC.describe] error");
+    pub async fn describe(
+        client: &Client,
+        matcher: &ResourceMatcher,
+    ) -> Result<Vec<types::Vpc>, Error> {
+        let r = client.describe_vpcs();
+        let request = match matcher {
+            ResourceMatcher::Id(vpc_ids) => match vpc_ids.len() {
+                0 => None,
+                _ => Some(r.set_vpc_ids(Some(vpc_ids.clone())).send()),
+            },
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(tag)).send()),
         };
 
-        let vpcs = response.vpcs.unwrap();
-        println!("[VPC.describe] success {:?}", vpcs.len());
-        Ok(vpcs)
+        match request {
+            None => Ok(Vec::new()),
+            Some(response) => match response.await {
+                Ok(response) => {
+                    let vpcs = response.vpcs.clone().unwrap();
+                    match vpcs.len() {
+                        0 => Ok(Vec::new()),
+                        _ => Ok(vpcs.clone()),
+                    }
+                }
+                Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
+            },
+        }
     }
 
     pub async fn delete(client: &Client, vpc_id: &str) -> Result<(), Error> {
@@ -117,16 +146,32 @@ impl Subnet {
         Ok(subnet.clone())
     }
 
-    pub async fn describe(client: &Client, subnet_id: &str) -> Result<Vec<types::Subnet>, Error> {
-        println!("[Subnet.describe] subnet_id {}", subnet_id);
-
-        let Ok(response) = client.describe_subnets().subnet_ids(subnet_id).send().await else {
-            panic!("[Subnet.describe] error");
+    pub async fn describe(
+        client: &Client,
+        matcher: &ResourceMatcher,
+    ) -> Result<Vec<types::Subnet>, Error> {
+        let request = client.describe_subnets();
+        let request = match matcher {
+            ResourceMatcher::Id(subnet_ids) => match subnet_ids.len() {
+                0 => None,
+                _ => Some(request.set_subnet_ids(Some(subnet_ids.clone())).send()),
+            },
+            ResourceMatcher::Tagged(tag) => Some(request.filters(create_tag_filter(tag)).send()),
         };
 
-        let subnets = response.subnets.unwrap();
-        println!("[Subnet.describe] success {:?}", subnets.len());
-        Ok(subnets)
+        match request {
+            None => Ok(Vec::new()),
+            Some(response) => match response.await {
+                Ok(response) => {
+                    let subnets = response.subnets.clone().unwrap();
+                    match subnets.len() {
+                        0 => Ok(Vec::new()),
+                        _ => Ok(subnets.clone()),
+                    }
+                }
+                Err(e) => panic!("[Subnet.describe] ERROR\n{}", e),
+            },
+        }
     }
 
     pub async fn delete(client: &Client, subnet_id: &str) -> Result<(), Error> {
@@ -215,28 +260,30 @@ impl SecurityGroup {
 
     pub async fn describe(
         client: &Client,
-        security_group_id: &str,
+        matcher: &ResourceMatcher,
     ) -> Result<Vec<types::SecurityGroup>, Error> {
-        println!(
-            "[SecurityGroup.describe] security_group_id {}",
-            security_group_id
-        );
-
-        let Ok(response) = client
-            .describe_security_groups()
-            .group_ids(security_group_id)
-            .send()
-            .await
-        else {
-            panic!("[SecurityGroup.describe] error");
+        let r = client.describe_security_groups();
+        let request = match matcher {
+            ResourceMatcher::Id(sg_ids) => match sg_ids.len() {
+                0 => None,
+                _ => Some(r.set_group_ids(Some(sg_ids.clone())).send()),
+            },
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(tag)).send()),
         };
 
-        let security_groups = response.security_groups.unwrap();
-        println!(
-            "[SecurityGroup.describe] success {:?}",
-            security_groups.len()
-        );
-        Ok(security_groups)
+        match request {
+            None => Ok(Vec::new()),
+            Some(response) => match response.await {
+                Ok(response) => {
+                    let sgs = response.security_groups.clone().unwrap();
+                    match sgs.len() {
+                        0 => Ok(Vec::new()),
+                        _ => Ok(sgs.clone()),
+                    }
+                }
+                Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
+            },
+        }
     }
 
     pub async fn delete(client: &Client, security_group_id: &str) -> Result<(), Error> {
@@ -344,7 +391,7 @@ pub struct Bee {
 }
 
 /// Beez can be loaded via id list or a resource tag
-pub enum BeeLoader {
+pub enum BeeMatcher {
     Ids(Vec<Bee>),
     Tagged(String),
 }
@@ -401,28 +448,19 @@ impl Instances {
         Ok(instances)
     }
 
-    pub async fn describe(client: &Client, loader: BeeLoader) -> Result<Vec<Bee>, Error> {
+    pub async fn describe(client: &Client, loader: &BeeMatcher) -> Result<Vec<Bee>, Error> {
         println!("[Instances.describe]");
 
+        let r = client.describe_instances();
         let request = match loader {
-            BeeLoader::Ids(ids) => match ids.len() {
-                0 => None,
-                _ => Some(
-                    client
-                        .describe_instances()
-                        .set_instance_ids(Some(
-                            ids.iter().map(|b| b.id.clone()).collect::<Vec<String>>(),
-                        ))
-                        .send(),
-                ),
-            },
-            BeeLoader::Tagged(tag) => {
-                let filter = types::Filter::builder()
-                    .name("tag:Name")
-                    .values(tag)
-                    .build();
-                Some(client.describe_instances().filters(filter).send())
+            BeeMatcher::Ids(ids) => {
+                let ids_vec = ids.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
+                match ids.len() {
+                    0 => None,
+                    _ => Some(r.set_instance_ids(Some(ids_vec)).send()),
+                }
             }
+            BeeMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
         };
 
         match request {
@@ -461,29 +499,29 @@ impl Instances {
     pub async fn delete(
         client: &Client,
         sc: &SwarmConfig,
-        matcher: BeeLoader,
+        matcher: &BeeMatcher,
     ) -> Result<(), Error> {
         // multiple branches below need this
-        let request_termination = |beez: Vec<Bee>| {
-            Some(
-                client
-                    .terminate_instances()
-                    .set_instance_ids(Some(
-                        beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>(),
-                    ))
-                    .send(),
-            )
+        let terminate_beez = |beez: Vec<Bee>| {
+            let bee_ids = beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
+            let r = client.terminate_instances();
+            Some(r.set_instance_ids(Some(bee_ids)).send())
         };
 
         let request = match matcher {
-            BeeLoader::Ids(beez) => match beez.len() {
+            // terminate list of ids
+            BeeMatcher::Ids(beez) => match beez.len() {
                 0 => None,
-                _ => request_termination(beez),
+                _ => terminate_beez(beez.clone()),
             },
-            BeeLoader::Tagged(tag) => match Instances::tagged(client, sc).await {
-                Ok(beez) => request_termination(beez),
-                _ => None,
-            },
+            // convert tag into list of ids, then terminate
+            BeeMatcher::Tagged(tag) => {
+                let m = &BeeMatcher::Tagged(sc.tag_name.clone());
+                match Instances::describe(client, m).await {
+                    Ok(beez) => terminate_beez(beez),
+                    _ => None,
+                }
+            }
         };
 
         match request {
@@ -500,16 +538,11 @@ impl Instances {
         }
     }
 
-    pub async fn tagged(client: &Client, sc: &SwarmConfig) -> Result<Vec<Bee>, Error> {
-        println!("[Instances.tagged]");
-        Instances::describe(client, BeeLoader::Tagged(sc.tag_name.clone())).await
-    }
-
     pub async fn wait_for_running(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
         println!("[Instances.wait_for_running]");
         loop {
-            let running_beez = Instances::describe(client, BeeLoader::Ids(beez.clone())).await;
-            let running_beez = running_beez.unwrap();
+            let m = &BeeMatcher::Ids(beez.clone());
+            let running_beez = Instances::describe(client, m).await.unwrap();
 
             // return Ok when counts match
             let delta = beez.len() - running_beez.len();
