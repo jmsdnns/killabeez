@@ -37,8 +37,8 @@ pub struct VPC {}
 impl VPC {
     pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Vpc, Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Vpc);
-        println!("[create_vpc]");
-        println!("[create_vpc] tags: {:?}", tag_specifications);
+        println!("[VPC.create]");
+        println!("[VPC.create] tags: {:?}", tag_specifications);
 
         let response = client
             .create_vpc()
@@ -49,20 +49,20 @@ impl VPC {
 
         let vpc = response.vpc.as_ref().unwrap();
         let vpc_id = vpc.vpc_id().unwrap();
-        println!("[create_vpc] success {:?}", vpc_id);
+        println!("[VPC.create] success {:?}", vpc_id);
 
         Ok(vpc.clone())
     }
 
     pub async fn describe(client: &Client, vpc_id: &str) -> Result<Vec<types::Vpc>, Error> {
-        println!("[describe_vpc] vpc_id {}", vpc_id);
+        println!("[VPC.describe] vpc_id {}", vpc_id);
 
         let Ok(response) = client.describe_vpcs().vpc_ids(vpc_id).send().await else {
-            panic!("[describe_vpc] error");
+            panic!("[VPC.describe] error");
         };
 
         let vpcs = response.vpcs.unwrap();
-        println!("[describe_vpc] success {:?}", vpcs.len());
+        println!("[VPC.describe] success {:?}", vpcs.len());
         Ok(vpcs)
     }
 }
@@ -74,8 +74,8 @@ impl Subnet {
     pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Subnet, Error> {
         let vpc_id = sc.vpc_id.as_ref().unwrap();
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Subnet);
-        println!("[create_subnet] vpc_id {}", &sc.vpc_id.as_ref().unwrap());
-        println!("[create_subnet] tags: {:?}", tag_specifications);
+        println!("[Subnet.create] vpc_id {}", &sc.vpc_id.as_ref().unwrap());
+        println!("[Subnet.create] tags: {:?}", tag_specifications);
 
         let response = client
             .create_subnet()
@@ -87,7 +87,7 @@ impl Subnet {
 
         let subnet = response.subnet.unwrap();
         let subnet_id = subnet.subnet_id().unwrap();
-        println!("[create_subnet] success {:?}", subnet_id);
+        println!("[Subnet.create] success {:?}", subnet_id);
 
         client
             .modify_subnet_attribute()
@@ -95,20 +95,20 @@ impl Subnet {
             .map_public_ip_on_launch(types::AttributeBooleanValue::builder().value(true).build())
             .send()
             .await?;
-        println!("[create_subnet] maps public ip on launch");
+        println!("[Subnet.create] maps public ip on launch");
 
         Ok(subnet.clone())
     }
 
     pub async fn describe(client: &Client, subnet_id: &str) -> Result<Vec<types::Subnet>, Error> {
-        println!("[describe_subnet] subnet_id {}", subnet_id);
+        println!("[Subnet.describe] subnet_id {}", subnet_id);
 
         let Ok(response) = client.describe_subnets().subnet_ids(subnet_id).send().await else {
-            panic!("[describe_subnet] error");
+            panic!("[Subnet.describe] error");
         };
 
         let subnets = response.subnets.unwrap();
-        println!("[describe_subnet] success {:?}", subnets.len());
+        println!("[Subnet.describe] success {:?}", subnets.len());
         Ok(subnets)
     }
 }
@@ -121,9 +121,9 @@ impl SecurityGroup {
         let vpc_id = sc.vpc_id.as_ref().unwrap();
         let tag_specifications = create_tag_spec(sc, types::ResourceType::SecurityGroup);
         let ssh_cidr_block = sc.ssh_cidr_block.as_ref().unwrap();
-        println!("[create_security_group] vpc_id {:?}", vpc_id);
-        println!("[create_security_group] tags {:?}", tag_specifications);
-        println!("[create_security_group] ssh cidr {:?}", ssh_cidr_block);
+        println!("[SecurityGroup.create] vpc_id {:?}", vpc_id);
+        println!("[SecurityGroup.create] tags {:?}", tag_specifications);
+        println!("[SecurityGroup.create] ssh cidr {:?}", ssh_cidr_block);
 
         let response = client
             .create_security_group()
@@ -136,7 +136,7 @@ impl SecurityGroup {
 
         let sg_id = response.group_id.unwrap();
 
-        println!("[create_security_group] success {:?}", sg_id);
+        println!("[SecurityGroup.create] success {:?}", sg_id);
 
         // Add ingress rule to allow SSH
         client
@@ -157,7 +157,7 @@ impl SecurityGroup {
             .send()
             .await?;
 
-        println!("[create_security_group] ingress");
+        println!("[SecurityGroup.create] ingress");
 
         // Add egress rule to allow all outbound traffic
         client
@@ -174,7 +174,7 @@ impl SecurityGroup {
             .send()
             .await?;
 
-        println!("[create_security_group] egress");
+        println!("[SecurityGroup.create] egress");
 
         Ok(sg_id.clone())
     }
@@ -184,7 +184,7 @@ impl SecurityGroup {
         security_group_id: &str,
     ) -> Result<Vec<types::SecurityGroup>, Error> {
         println!(
-            "[describe_security_group] security_group_id {}",
+            "[SecurityGroup.describe] security_group_id {}",
             security_group_id
         );
 
@@ -194,12 +194,12 @@ impl SecurityGroup {
             .send()
             .await
         else {
-            panic!("[describe_security_group] error");
+            panic!("[SecurityGroup.describe] error");
         };
 
         let security_groups = response.security_groups.unwrap();
         println!(
-            "[describe_security_group] success {:?}",
+            "[SecurityGroup.describe] success {:?}",
             security_groups.len()
         );
         Ok(security_groups)
@@ -215,38 +215,36 @@ impl SSHKey {
         sc: &SwarmConfig,
         key_name: &str,
     ) -> Result<String, Error> {
-        println!("[import_key_pair] name {}", key_name);
-        println!("[import_key_pair] key_file {}", sc.key_file.clone());
+        println!("[SSHKey.import] name {}", key_name);
+        println!("[SSHKey.import] key_file {}", sc.key_file.clone());
 
         let tag_specifications = create_tag_spec(sc, types::ResourceType::KeyPair);
 
         let key_path = PathBuf::from(sc.key_file.clone());
-        println!(
-            "[import_key_pair] key_file {:?}",
-            fs::canonicalize(&key_path)
-        );
+        println!("[SSHKey.import] key_file {:?}", fs::canonicalize(&key_path));
 
         let key_material = match std::fs::read_to_string(sc.key_file.clone()) {
             Ok(key_material) => key_material,
-            Err(e) => panic!("[key material] read_to_string\n{}", e),
+            Err(e) => panic!("[SSHKey.import] read_to_string\n{}", e),
         };
-        println!("[key material] loaded");
+        println!("[SSHKey.import] key material loaded");
 
         let key_blob = aws_sdk_ec2::primitives::Blob::new(key_material);
 
-        let Ok(response) = client
+        let response = match client
             .import_key_pair()
             .key_name(key_name)
             .public_key_material(key_blob)
             .tag_specifications(tag_specifications)
             .send()
             .await
-        else {
-            panic!("[key pair] Waaaah!");
+        {
+            Ok(response) => response,
+            Err(e) => panic!("[SSHKey.import] ERROR import call\n{}", e),
         };
 
         let key_id = response.key_pair_id.unwrap();
-        println!("[key material] success {:?}", key_id);
+        println!("[SSHKey.import] success {:?}", key_id);
         Ok(key_id)
     }
 
@@ -254,16 +252,16 @@ impl SSHKey {
         client: &Client,
         key_name: &str,
     ) -> Result<Vec<types::KeyPairInfo>, Error> {
-        println!("[describe_key_pair] key_name {}", key_name);
+        println!("[SSHKey.describe] key_name {}", key_name);
 
         match client.describe_key_pairs().key_names(key_name).send().await {
             Ok(response) => {
                 let key_pairs = response.key_pairs.unwrap();
-                println!("[describe_key_pair] success {:?}", key_pairs.len());
+                println!("[SSHKey.describe] success {:?}", key_pairs.len());
                 Ok(key_pairs)
             }
             Err(e) => {
-                println!("[describe_key_pair] no key found");
+                println!("[SSHKey.describe] no key found");
                 Ok(Vec::new())
             }
         }
@@ -293,7 +291,7 @@ impl Instances {
         network: &AWSNetwork,
         count_delta: Option<i32>,
     ) -> Result<Vec<Bee>, Error> {
-        println!("[create_instances]");
+        println!("[Instances.create]");
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Instance);
 
         let new_beez = match count_delta {
@@ -315,11 +313,11 @@ impl Instances {
             .await
         {
             Ok(instances) => instances,
-            Err(e) => panic!("[create_instances] ERROR create {:?}", e),
+            Err(e) => panic!("[Instances.create] ERROR create {:?}", e),
         };
 
         if response.instances().is_empty() {
-            panic!("[create_instances] ERROR no instances created");
+            panic!("[Instances.create] ERROR no instances created");
         }
 
         let instances = response
@@ -336,7 +334,7 @@ impl Instances {
     }
 
     pub async fn describe(client: &Client, loader: BeeLoader) -> Result<Vec<Bee>, Error> {
-        println!("[describe_instances]");
+        println!("[Instances.describe]");
 
         let request = match loader {
             BeeLoader::Ids(ids) => match ids.len() {
@@ -393,12 +391,12 @@ impl Instances {
     }
 
     pub async fn tagged(client: &Client, sc: &SwarmConfig) -> Result<Vec<Bee>, Error> {
-        println!("[load_tagged]");
+        println!("[Instances.tagged]");
         Instances::describe(client, BeeLoader::Tagged(sc.tag_name.clone())).await
     }
 
     pub async fn wait_for_running(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
-        println!("[wait_for_running]");
+        println!("[Instances.wait_for_running]");
         loop {
             let running_beez = Instances::describe(client, BeeLoader::Ids(beez.clone())).await;
             let running_beez = running_beez.unwrap();
@@ -408,7 +406,10 @@ impl Instances {
             if delta == 0 {
                 return Ok(running_beez.clone());
             }
-            println!("[wait_for_running] waiting 15 seconds for {} beez", delta);
+            println!(
+                "[Instances.wait_for_running] waiting 15 seconds for {} beez",
+                delta
+            );
             tokio::time::sleep(Duration::from_secs(15)).await;
         }
     }
