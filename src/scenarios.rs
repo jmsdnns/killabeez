@@ -2,7 +2,7 @@ use aws_sdk_ec2::waiters::security_group_exists;
 use aws_sdk_ec2::{Client, Error};
 
 use crate::aws;
-use crate::aws::ec2::Bee;
+use crate::aws::ec2::{Bee, Instances, SSHKey, SecurityGroup, Subnet, VPC};
 use crate::config::SwarmConfig;
 
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ impl AWSNetwork {
 
         let existing_vpc_id = match sc.vpc_id.clone() {
             Some(sc_vpc_id) => {
-                let Ok(vpcs) = aws::ec2::describe_vpc(client, &sc_vpc_id).await else {
+                let Ok(vpcs) = VPC::describe(client, &sc_vpc_id).await else {
                     panic!("[load_vpc] ERROR describe vpc_id failed {:?}", sc_vpc_id);
                 };
                 if vpcs.is_empty() {
@@ -57,7 +57,7 @@ impl AWSNetwork {
 
         let final_vpc_id = match existing_vpc_id {
             None => {
-                let Ok(vpc) = aws::ec2::create_vpc(client, sc).await else {
+                let Ok(vpc) = VPC::create(client, sc).await else {
                     panic!("[load_vpc] ERROR create vpc");
                 };
                 Some(vpc.vpc_id.unwrap().clone())
@@ -76,7 +76,7 @@ impl AWSNetwork {
 
         let existing_subnet_id = match sc.subnet_id.clone() {
             Some(sc_subnet_id) => {
-                let Ok(subnets) = aws::ec2::describe_subnet(client, &sc_subnet_id).await else {
+                let Ok(subnets) = Subnet::describe(client, &sc_subnet_id).await else {
                     panic!(
                         "[load_subnet] ERROR describe subnet_id failed {:?}",
                         sc_subnet_id
@@ -93,7 +93,7 @@ impl AWSNetwork {
 
         let final_subnet_id = match existing_subnet_id {
             None => {
-                let Ok(subnet) = aws::ec2::create_subnet(client, sc).await else {
+                let Ok(subnet) = Subnet::create(client, sc).await else {
                     panic!("[load_subnet] Waaaah");
                 };
                 Some(subnet.subnet_id.unwrap().clone())
@@ -110,7 +110,7 @@ impl AWSNetwork {
         let existing_sg_id = match sc.security_group_id.clone() {
             Some(sc_security_group_id) => {
                 let Ok(security_groups) =
-                    aws::ec2::describe_security_group(client, &sc_security_group_id).await
+                    SecurityGroup::describe(client, &sc_security_group_id).await
                 else {
                     panic!(
                         "[load_security_group] ERROR describe security_group_id failed {:?}",
@@ -128,7 +128,7 @@ impl AWSNetwork {
 
         let final_sg_id = match existing_sg_id {
             None => {
-                let Ok(security_group) = aws::ec2::create_security_group(client, sc).await else {
+                let Ok(security_group) = SecurityGroup::create(client, sc).await else {
                     panic!("[load_security_group] Waaaah");
                 };
                 Some(security_group.clone())
@@ -180,13 +180,13 @@ impl Swarm {
     pub async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
         println!("[load_key_pair]");
 
-        let existing = match aws::ec2::describe_key_pair(client, aws::ec2::KEY_NAME).await {
+        let existing = match SSHKey::describe(client, aws::ec2::KEY_NAME).await {
             Ok(key_pairs) => key_pairs,
             Err(e) => panic!("[load_key_pair] ERROR describe {:?}", e),
         };
 
         if existing.is_empty() {
-            let Ok(key_id) = aws::ec2::import_key_pair(client, sc, aws::ec2::KEY_NAME).await else {
+            let Ok(key_id) = SSHKey::import(client, sc, aws::ec2::KEY_NAME).await else {
                 panic!("[load_key_pair] ERROR waaah");
             };
             Ok(key_id.clone())
@@ -204,7 +204,7 @@ impl Swarm {
         println!("[load_instances]");
 
         // load id and ip for all tagged instances
-        let instances = match aws::ec2::describe_tagged(client, sc).await {
+        let instances = match Instances::tagged(client, sc).await {
             Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),
         };
@@ -217,7 +217,7 @@ impl Swarm {
             num_beez if num_beez > num_instances => {
                 let additional = num_beez - num_instances;
                 println!("[load_instances] adding instances {}", additional);
-                aws::ec2::create_instances(client, sc, network, Some(additional))
+                Instances::create(client, sc, network, Some(additional))
                     .await
                     .unwrap()
             }
@@ -236,7 +236,7 @@ impl Swarm {
         };
 
         // wait for all to be fully initialized
-        let beez = match aws::ec2::wait_for_running(client, beez).await {
+        let beez = match Instances::wait_for_running(client, beez).await {
             Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_instances] ERROR wait_for_running\n{}", e),
         };
