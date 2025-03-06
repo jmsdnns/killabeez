@@ -19,6 +19,8 @@ pub async fn mk_client() -> Result<Client, Error> {
     Ok(Client::new(&config))
 }
 
+// Tags
+
 fn create_tag_spec(sc: &SwarmConfig, rt: types::ResourceType) -> types::TagSpecification {
     types::TagSpecification::builder()
         .resource_type(rt)
@@ -31,18 +33,18 @@ fn create_tag_spec(sc: &SwarmConfig, rt: types::ResourceType) -> types::TagSpeci
         .build()
 }
 
-/// Beez can be loaded via id list or a resource tag
-#[derive(Debug, Clone)]
-pub enum ResourceMatcher {
-    Id(Vec<String>),
-    Tagged(String),
-}
-
 fn create_tag_filter(tag: &str) -> types::Filter {
     types::Filter::builder()
         .name("tag:Name")
         .values(tag)
         .build()
+}
+
+/// Beez can be loaded via id list or a resource tag
+#[derive(Debug, Clone)]
+pub enum ResourceMatcher {
+    Id(Vec<String>),
+    Tagged(String),
 }
 
 // VPCs
@@ -162,13 +164,13 @@ impl Subnet {
         client: &Client,
         matcher: ResourceMatcher,
     ) -> Result<Vec<types::Subnet>, Error> {
-        let request = client.describe_subnets();
+        let r = client.describe_subnets();
         let request = match matcher {
             ResourceMatcher::Id(subnet_ids) => match subnet_ids.len() {
                 0 => None,
-                _ => Some(request.set_subnet_ids(Some(subnet_ids.clone())).send()),
+                _ => Some(r.set_subnet_ids(Some(subnet_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(request.filters(create_tag_filter(&tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
         };
 
         match request {
