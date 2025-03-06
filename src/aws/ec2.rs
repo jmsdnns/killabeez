@@ -119,7 +119,10 @@ impl VPC {
                         .iter()
                         .filter_map(|b| b.vpc_id.clone())
                         .collect::<Vec<String>>();
-                    terminate_ids(client, vpc_ids).await
+                    match vpc_ids.len() {
+                        0 => Ok(()),
+                        _ => terminate_ids(client, vpc_ids).await,
+                    }
                 }
                 Err(e) => unimplemented!(),
             },
@@ -209,7 +212,10 @@ impl Subnet {
                         .iter()
                         .filter_map(|b| b.subnet_id.clone())
                         .collect::<Vec<String>>();
-                    terminate_ids(client, subnet_ids.clone()).await
+                    match subnet_ids.len() {
+                        0 => Ok(()),
+                        _ => terminate_ids(client, subnet_ids).await,
+                    }
                 }
                 Err(e) => unimplemented!(),
             },
@@ -333,7 +339,10 @@ impl SecurityGroup {
                             .iter()
                             .filter_map(|b| b.group_id.clone())
                             .collect::<Vec<String>>();
-                        terminate_ids(client, sg_ids).await
+                        match sg_ids.len() {
+                            0 => Ok(()),
+                            _ => terminate_ids(client, sg_ids).await,
+                        }
                     }
                     Err(e) => unimplemented!(),
                 }
