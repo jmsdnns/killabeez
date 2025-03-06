@@ -32,6 +32,7 @@ fn create_tag_spec(sc: &SwarmConfig, rt: types::ResourceType) -> types::TagSpeci
 }
 
 /// Beez can be loaded via id list or a resource tag
+#[derive(Debug, Clone)]
 pub enum ResourceMatcher {
     Id(Vec<String>),
     Tagged(String),
@@ -95,20 +96,31 @@ impl VPC {
         }
     }
 
-    pub async fn delete(client: &Client, vpc_id: &str) -> Result<(), Error> {
-        match client
-            .delete_vpc()
-            .set_vpc_id(Some(vpc_id.to_string()))
-            .send()
-            .await
-        {
-            Ok(response) => {
-                println!("[VPC.delete] success {}", vpc_id);
-                Ok(())
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
+        async fn terminate_ids(client: &Client, vpc_ids: Vec<String>) -> Result<(), Error> {
+            let r = client.delete_vpc();
+            let vpc_id = vpc_ids.first().unwrap().clone();
+            match r.set_vpc_id(Some(vpc_id)).send().await {
+                Ok(_) => Ok(()),
+                Err(e) => unimplemented!(),
             }
-            Err(e) => {
-                panic!("[VPC.delete] ERROR {}", e);
-            }
+        }
+
+        match matcher {
+            ResourceMatcher::Id(vpc_ids) => match vpc_ids.len() {
+                0 => Ok(()),
+                _ => terminate_ids(client, vpc_ids.clone()).await,
+            },
+            m @ ResourceMatcher::Tagged(_) => match VPC::describe(client, m.clone()).await {
+                Ok(vpcs) => {
+                    let vpc_ids = vpcs
+                        .iter()
+                        .filter_map(|b| b.vpc_id.clone())
+                        .collect::<Vec<String>>();
+                    terminate_ids(client, vpc_ids).await
+                }
+                Err(e) => unimplemented!(),
+            },
         }
     }
 }
@@ -174,20 +186,31 @@ impl Subnet {
         }
     }
 
-    pub async fn delete(client: &Client, subnet_id: &str) -> Result<(), Error> {
-        match client
-            .delete_subnet()
-            .set_subnet_id(Some(subnet_id.to_string()))
-            .send()
-            .await
-        {
-            Ok(response) => {
-                println!("[Subnet.delete] success {}", subnet_id);
-                Ok(())
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
+        async fn terminate_ids(client: &Client, subnet_ids: Vec<String>) -> Result<(), Error> {
+            let r = client.delete_subnet();
+            let subnet_id = subnet_ids.first().unwrap().clone();
+            match r.set_subnet_id(Some(subnet_id)).send().await {
+                Ok(_) => Ok(()),
+                Err(e) => unimplemented!(),
             }
-            Err(e) => {
-                panic!("[Subnet.delete] ERROR {}", e);
-            }
+        }
+
+        match matcher {
+            ResourceMatcher::Id(subnet_ids) => match subnet_ids.len() {
+                0 => Ok(()),
+                _ => terminate_ids(client, subnet_ids.clone()).await,
+            },
+            m @ ResourceMatcher::Tagged(_) => match Subnet::describe(client, m.clone()).await {
+                Ok(subnets) => {
+                    let subnet_ids = subnets
+                        .iter()
+                        .filter_map(|b| b.subnet_id.clone())
+                        .collect::<Vec<String>>();
+                    terminate_ids(client, subnet_ids.clone()).await
+                }
+                Err(e) => unimplemented!(),
+            },
         }
     }
 }
@@ -286,19 +309,32 @@ impl SecurityGroup {
         }
     }
 
-    pub async fn delete(client: &Client, security_group_id: &str) -> Result<(), Error> {
-        match client
-            .delete_security_group()
-            .set_group_id(Some(security_group_id.to_string()))
-            .send()
-            .await
-        {
-            Ok(response) => {
-                println!("[SecurityGroup.delete] success {}", security_group_id);
-                Ok(())
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
+        async fn terminate_ids(client: &Client, sg_ids: Vec<String>) -> Result<(), Error> {
+            let r = client.delete_security_group();
+            let sg_id = sg_ids.first().unwrap().clone();
+            match r.set_group_id(Some(sg_id)).send().await {
+                Ok(_) => Ok(()),
+                Err(e) => unimplemented!(),
             }
-            Err(e) => {
-                panic!("[SecurityGroup.delete] ERROR {}", e);
+        }
+
+        match matcher {
+            ResourceMatcher::Id(sg_ids) => match sg_ids.len() {
+                0 => Ok(()),
+                _ => terminate_ids(client, sg_ids.clone()).await,
+            },
+            m @ ResourceMatcher::Tagged(_) => {
+                match SecurityGroup::describe(client, m.clone()).await {
+                    Ok(sgs) => {
+                        let sg_ids = sgs
+                            .iter()
+                            .filter_map(|b| b.group_id.clone())
+                            .collect::<Vec<String>>();
+                        terminate_ids(client, sg_ids).await
+                    }
+                    Err(e) => unimplemented!(),
+                }
             }
         }
     }
@@ -391,6 +427,7 @@ pub struct Bee {
 }
 
 /// Beez can be loaded via id list or a resource tag
+#[derive(Debug, Clone)]
 pub enum BeeMatcher {
     Ids(Vec<Bee>),
     Tagged(String),
@@ -502,38 +539,25 @@ impl Instances {
         matcher: &BeeMatcher,
     ) -> Result<(), Error> {
         // multiple branches below need this
-        let terminate_beez = |beez: Vec<Bee>| {
+        async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<(), Error> {
             let bee_ids = beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
             let r = client.terminate_instances();
-            Some(r.set_instance_ids(Some(bee_ids)).send())
-        };
+            match r.set_instance_ids(Some(bee_ids)).send().await {
+                Ok(_) => Ok(()),
+                Err(e) => unimplemented!(),
+            }
+        }
 
-        let request = match matcher {
+        match matcher {
             // terminate list of ids
             BeeMatcher::Ids(beez) => match beez.len() {
-                0 => None,
-                _ => terminate_beez(beez.clone()),
+                0 => Ok(()),
+                _ => terminate_beez(client, beez.clone()).await,
             },
             // convert tag into list of ids, then terminate
-            BeeMatcher::Tagged(tag) => {
-                let m = BeeMatcher::Tagged(sc.tag_name.clone());
-                match Instances::describe(client, m).await {
-                    Ok(beez) => terminate_beez(beez),
-                    _ => None,
-                }
-            }
-        };
-
-        match request {
-            None => Ok(()),
-            Some(response) => match response.await {
-                Ok(response) => {
-                    println!("[Instances.delete {:?}", response.terminating_instances);
-                    Ok(())
-                }
-                Err(e) => {
-                    panic!("Error terminating instances: {}", e);
-                }
+            m @ BeeMatcher::Tagged(_) => match Instances::describe(client, m.clone()).await {
+                Ok(beez) => terminate_beez(client, beez.clone()).await,
+                _ => Ok(()),
             },
         }
     }
