@@ -61,6 +61,7 @@ pub async fn run(sc: &SwarmConfig) {
         }
         Commands::Terminate { name } => {
             println!("[cli terminate] {name}");
+            AWSNetwork::drop_network(&client, sc).await;
         }
         Commands::Exec { name, script } => {
             println!("[cli exec] {name} {:?}", script);
