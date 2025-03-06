@@ -43,7 +43,7 @@ impl AWSNetwork {
 
         let existing_vpc_id = match sc.vpc_id.clone() {
             Some(sc_vpc_id) => {
-                let m = &ResourceMatcher::Id(vec![sc_vpc_id.clone()]);
+                let m = ResourceMatcher::Id(vec![sc_vpc_id.clone()]);
                 let vpcs = match VPC::describe(client, m).await {
                     Ok(vpcs) => vpcs,
                     Err(e) => panic!("[load_vpc] ERROR load_vpc {:?}", e),
@@ -80,7 +80,7 @@ impl AWSNetwork {
 
         let existing_subnet_id = match sc.subnet_id.clone() {
             Some(sc_subnet_id) => {
-                let m = &ResourceMatcher::Id(vec![sc_subnet_id.clone()]);
+                let m = ResourceMatcher::Id(vec![sc_subnet_id.clone()]);
                 let subnets = match Subnet::describe(client, m).await {
                     Ok(subnets) => subnets,
                     Err(e) => panic!("[load_subnet] ERROR describe {:?}", e),
@@ -112,7 +112,7 @@ impl AWSNetwork {
 
         let existing_sg_id = match sc.security_group_id.clone() {
             Some(sc_security_group_id) => {
-                let m = &ResourceMatcher::Id(vec![sc_security_group_id.clone()]);
+                let m = ResourceMatcher::Id(vec![sc_security_group_id.clone()]);
                 let security_groups = match SecurityGroup::describe(client, m).await {
                     Ok(sgs) => sgs,
                     Err(e) => panic!("[load_security_group] ERROR {:?}", e),
@@ -204,7 +204,7 @@ impl Swarm {
         println!("[load_instances]");
 
         // load id and ip for all tagged instances
-        let m = &BeeMatcher::Tagged(sc.tag_name.clone());
+        let m = BeeMatcher::Tagged(sc.tag_name.clone());
         let instances = match Instances::describe(client, m).await {
             Ok(instances) => instances.clone(),
             Err(e) => panic!("[load_swarm] ERROR load_instances\n{}", e),

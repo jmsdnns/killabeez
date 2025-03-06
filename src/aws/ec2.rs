@@ -69,7 +69,7 @@ impl VPC {
 
     pub async fn describe(
         client: &Client,
-        matcher: &ResourceMatcher,
+        matcher: ResourceMatcher,
     ) -> Result<Vec<types::Vpc>, Error> {
         let r = client.describe_vpcs();
         let request = match matcher {
@@ -77,7 +77,7 @@ impl VPC {
                 0 => None,
                 _ => Some(r.set_vpc_ids(Some(vpc_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
         };
 
         match request {
@@ -148,7 +148,7 @@ impl Subnet {
 
     pub async fn describe(
         client: &Client,
-        matcher: &ResourceMatcher,
+        matcher: ResourceMatcher,
     ) -> Result<Vec<types::Subnet>, Error> {
         let request = client.describe_subnets();
         let request = match matcher {
@@ -156,7 +156,7 @@ impl Subnet {
                 0 => None,
                 _ => Some(request.set_subnet_ids(Some(subnet_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(request.filters(create_tag_filter(tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(request.filters(create_tag_filter(&tag)).send()),
         };
 
         match request {
@@ -260,7 +260,7 @@ impl SecurityGroup {
 
     pub async fn describe(
         client: &Client,
-        matcher: &ResourceMatcher,
+        matcher: ResourceMatcher,
     ) -> Result<Vec<types::SecurityGroup>, Error> {
         let r = client.describe_security_groups();
         let request = match matcher {
@@ -268,7 +268,7 @@ impl SecurityGroup {
                 0 => None,
                 _ => Some(r.set_group_ids(Some(sg_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
         };
 
         match request {
@@ -448,11 +448,11 @@ impl Instances {
         Ok(instances)
     }
 
-    pub async fn describe(client: &Client, loader: &BeeMatcher) -> Result<Vec<Bee>, Error> {
+    pub async fn describe(client: &Client, matcher: BeeMatcher) -> Result<Vec<Bee>, Error> {
         println!("[Instances.describe]");
 
         let r = client.describe_instances();
-        let request = match loader {
+        let request = match matcher {
             BeeMatcher::Ids(ids) => {
                 let ids_vec = ids.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
                 match ids.len() {
@@ -516,7 +516,7 @@ impl Instances {
             },
             // convert tag into list of ids, then terminate
             BeeMatcher::Tagged(tag) => {
-                let m = &BeeMatcher::Tagged(sc.tag_name.clone());
+                let m = BeeMatcher::Tagged(sc.tag_name.clone());
                 match Instances::describe(client, m).await {
                     Ok(beez) => terminate_beez(beez),
                     _ => None,
@@ -541,7 +541,7 @@ impl Instances {
     pub async fn wait_for_running(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
         println!("[Instances.wait_for_running]");
         loop {
-            let m = &BeeMatcher::Ids(beez.clone());
+            let m = BeeMatcher::Ids(beez.clone());
             let running_beez = Instances::describe(client, m).await.unwrap();
 
             // return Ok when counts match
