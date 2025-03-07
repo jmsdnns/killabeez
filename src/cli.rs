@@ -54,6 +54,20 @@ pub async fn run(sc: &SwarmConfig) {
             println!("[cli init] {name}");
             let network = AWSNetwork::load_network(&client, sc).await.unwrap();
             let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
+            println!("#####################");
+            println!("VPC ID:    {}", network.vpc_id);
+            println!("Subnet ID: {}", network.subnet_id);
+            println!("SG ID:     {}", network.security_group_id);
+            println!("SSH Key:   {}", swarm.key_pair);
+            println!(
+                "Instances: {}",
+                swarm
+                    .instances
+                    .iter()
+                    .map(|b| b.ip.clone().unwrap())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
         }
         Commands::Tagged { name } => {
             println!("[cli tagged] {name}");
@@ -61,6 +75,7 @@ pub async fn run(sc: &SwarmConfig) {
         }
         Commands::Terminate { name } => {
             println!("[cli terminate] {name}");
+            Swarm::drop_swarm(&client, sc).await;
             AWSNetwork::drop_network(&client, sc).await;
         }
         Commands::Exec { name, script } => {

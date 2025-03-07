@@ -3,16 +3,18 @@ use aws_sdk_ec2::{
     Client, Error,
     client::Waiters,
     error::SdkError,
-    operation::create_vpc::CreateVpcError,
-    types,
-    types::builders::{IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder},
+    operation::{create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder},
+    types::{
+        self,
+        builders::{
+            IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder, VpcBuilder,
+        },
+    },
 };
 use clap::builder::OsStr;
 use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, ptr::read, time::Duration};
 
 use crate::{config::SwarmConfig, scenarios::AWSNetwork};
-
-pub const KEY_NAME: &str = "the-beez-kees";
 
 pub async fn mk_client() -> Result<Client, Error> {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
@@ -56,18 +58,19 @@ impl VPC {
         println!("[VPC.create]");
         println!("[VPC.create] tags: {:?}", tag_specifications);
 
-        let response = client
+        let request = client
             .create_vpc()
             .cidr_block("10.0.0.0/16")
             .tag_specifications(tag_specifications)
-            .send()
-            .await?;
+            .send();
 
-        let vpc = response.vpc.as_ref().unwrap();
-        let vpc_id = vpc.vpc_id().unwrap();
-        println!("[VPC.create] success {:?}", vpc_id);
-
-        Ok(vpc.clone())
+        match request.await {
+            Ok(response) => match response.vpc {
+                Some(vpc) => Ok(vpc.clone()),
+                None => unimplemented!(),
+            },
+            Err(e) => panic!("[VPC.create] ERROR\n{}", e),
+        }
     }
 
     pub async fn describe(
@@ -85,14 +88,14 @@ impl VPC {
 
         match request {
             None => Ok(Vec::new()),
-            Some(response) => match response.await {
-                Ok(response) => {
-                    let vpcs = response.vpcs.clone().unwrap();
-                    match vpcs.len() {
+            Some(request) => match request.await {
+                Ok(response) => match response.vpcs {
+                    Some(vpcs) => match vpcs.len() {
                         0 => Ok(Vec::new()),
                         _ => Ok(vpcs.clone()),
-                    }
-                }
+                    },
+                    None => unimplemented!(),
+                },
                 Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
             },
         }
@@ -100,11 +103,18 @@ impl VPC {
 
     pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
         async fn terminate_ids(client: &Client, vpc_ids: Vec<String>) -> Result<(), Error> {
-            let r = client.delete_vpc();
-            let vpc_id = vpc_ids.first().unwrap().clone();
-            match r.set_vpc_id(Some(vpc_id)).send().await {
-                Ok(_) => Ok(()),
-                Err(e) => unimplemented!(),
+            match vpc_ids.len() {
+                0 => Ok(()),
+                _ => {
+                    let r = client.delete_vpc();
+                    match vpc_ids.first() {
+                        Some(vpc_id) => match r.set_vpc_id(Some(vpc_id.clone())).send().await {
+                            Ok(_) => Ok(()),
+                            Err(e) => panic!("[OH NO] ERROR\n{}", e),
+                        },
+                        None => Ok(()),
+                    }
+                }
             }
         }
 
@@ -121,7 +131,7 @@ impl VPC {
                         .collect::<Vec<String>>();
                     match vpc_ids.len() {
                         0 => Ok(()),
-                        _ => terminate_ids(client, vpc_ids).await,
+                        _ => terminate_ids(client, vpc_ids.clone()).await,
                     }
                 }
                 Err(e) => unimplemented!(),
@@ -134,15 +144,18 @@ impl VPC {
 
 pub struct Subnet {}
 impl Subnet {
-    pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Subnet, Error> {
-        let vpc_id = sc.vpc_id.as_ref().unwrap();
+    pub async fn create(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<types::Subnet, Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Subnet);
-        println!("[Subnet.create] vpc_id {}", &sc.vpc_id.as_ref().unwrap());
+        println!("[Subnet.create] vpc_id {}", vpc_id);
         println!("[Subnet.create] tags: {:?}", tag_specifications);
 
         let response = client
             .create_subnet()
-            .vpc_id(vpc_id.clone())
+            .vpc_id(vpc_id)
             .cidr_block("10.0.1.0/24")
             .tag_specifications(tag_specifications)
             .send()
@@ -178,14 +191,14 @@ impl Subnet {
 
         match request {
             None => Ok(Vec::new()),
-            Some(response) => match response.await {
-                Ok(response) => {
-                    let subnets = response.subnets.clone().unwrap();
-                    match subnets.len() {
+            Some(request) => match request.await {
+                Ok(response) => match response.subnets {
+                    Some(subnets) => match subnets.len() {
                         0 => Ok(Vec::new()),
                         _ => Ok(subnets.clone()),
-                    }
-                }
+                    },
+                    None => unimplemented!(),
+                },
                 Err(e) => panic!("[Subnet.describe] ERROR\n{}", e),
             },
         }
@@ -193,11 +206,20 @@ impl Subnet {
 
     pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
         async fn terminate_ids(client: &Client, subnet_ids: Vec<String>) -> Result<(), Error> {
-            let r = client.delete_subnet();
-            let subnet_id = subnet_ids.first().unwrap().clone();
-            match r.set_subnet_id(Some(subnet_id)).send().await {
-                Ok(_) => Ok(()),
-                Err(e) => unimplemented!(),
+            match subnet_ids.len() {
+                0 => Ok(()),
+                _ => {
+                    let r = client.delete_subnet();
+                    match subnet_ids.first() {
+                        Some(subnet_id) => {
+                            match r.set_subnet_id(Some(subnet_id.clone())).send().await {
+                                Ok(_) => Ok(()),
+                                Err(e) => unimplemented!(),
+                            }
+                        }
+                        None => Ok(()),
+                    }
+                }
             }
         }
 
@@ -227,17 +249,21 @@ impl Subnet {
 
 pub struct SecurityGroup {}
 impl SecurityGroup {
-    pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        let vpc_id = sc.vpc_id.as_ref().unwrap();
+    pub async fn create(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+        subnet_id: &str,
+    ) -> Result<String, Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::SecurityGroup);
-        let ssh_cidr_block = sc.ssh_cidr_block.as_ref().unwrap();
-        println!("[SecurityGroup.create] vpc_id {:?}", vpc_id);
+        let ssh_cidr_block = sc.ssh_cidr_block.clone().unwrap();
         println!("[SecurityGroup.create] tags {:?}", tag_specifications);
+        println!("[SecurityGroup.create] vpc_id {:?}", vpc_id);
         println!("[SecurityGroup.create] ssh cidr {:?}", ssh_cidr_block);
 
         let response = client
             .create_security_group()
-            .vpc_id(vpc_id.clone())
+            .vpc_id(vpc_id)
             .group_name("allow-ssh")
             .description("Allow SSH inbound traffic")
             .tag_specifications(tag_specifications)
@@ -304,14 +330,14 @@ impl SecurityGroup {
 
         match request {
             None => Ok(Vec::new()),
-            Some(response) => match response.await {
-                Ok(response) => {
-                    let sgs = response.security_groups.clone().unwrap();
-                    match sgs.len() {
+            Some(request) => match request.await {
+                Ok(response) => match response.security_groups {
+                    Some(sgs) => match sgs.len() {
                         0 => Ok(Vec::new()),
                         _ => Ok(sgs.clone()),
-                    }
-                }
+                    },
+                    None => unimplemented!(),
+                },
                 Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
             },
         }
@@ -319,11 +345,18 @@ impl SecurityGroup {
 
     pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
         async fn terminate_ids(client: &Client, sg_ids: Vec<String>) -> Result<(), Error> {
-            let r = client.delete_security_group();
-            let sg_id = sg_ids.first().unwrap().clone();
-            match r.set_group_id(Some(sg_id)).send().await {
-                Ok(_) => Ok(()),
-                Err(e) => unimplemented!(),
+            match sg_ids.len() {
+                0 => Ok(()),
+                _ => {
+                    let r = client.delete_security_group();
+                    match sg_ids.first() {
+                        Some(sg_id) => match r.set_group_id(Some(sg_id.clone())).send().await {
+                            Ok(_) => Ok(()),
+                            Err(e) => unimplemented!(),
+                        },
+                        None => Ok(()),
+                    }
+                }
             }
         }
 
@@ -353,22 +386,27 @@ impl SecurityGroup {
 
 // Key Pairs
 
+#[derive(Debug, Clone)]
+pub enum SSHKeyMatcher {
+    Id(String),
+    Name(String),
+}
+
 pub struct SSHKey {}
 impl SSHKey {
-    pub async fn import(
-        client: &Client,
-        sc: &SwarmConfig,
-        key_name: &str,
-    ) -> Result<String, Error> {
-        println!("[SSHKey.import] name {}", key_name);
-        println!("[SSHKey.import] key_file {}", sc.key_file.clone());
+    pub async fn import(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+        println!("[SSHKey.import] key_file {:?}", sc.key_file.clone());
+
+        let Some(key_file) = sc.key_file.clone() else {
+            unimplemented!()
+        };
 
         let tag_specifications = create_tag_spec(sc, types::ResourceType::KeyPair);
 
-        let key_path = PathBuf::from(sc.key_file.clone());
+        let key_path = PathBuf::from(&key_file);
         println!("[SSHKey.import] key_file {:?}", fs::canonicalize(&key_path));
 
-        let key_material = match std::fs::read_to_string(sc.key_file.clone()) {
+        let key_material = match std::fs::read_to_string(&key_file) {
             Ok(key_material) => key_material,
             Err(e) => panic!("[SSHKey.import] read_to_string\n{}", e),
         };
@@ -376,56 +414,66 @@ impl SSHKey {
 
         let key_blob = aws_sdk_ec2::primitives::Blob::new(key_material);
 
-        let response = match client
+        match client
             .import_key_pair()
-            .key_name(key_name)
+            .key_name(sc.tag_name.clone())
             .public_key_material(key_blob)
             .tag_specifications(tag_specifications)
             .send()
             .await
         {
-            Ok(response) => response,
+            Ok(response) => Ok(response.key_pair_id.clone().unwrap()),
             Err(e) => panic!("[SSHKey.import] ERROR import call\n{}", e),
-        };
-
-        let key_id = response.key_pair_id.unwrap();
-        println!("[SSHKey.import] success {:?}", key_id);
-        Ok(key_id)
+        }
     }
 
     pub async fn describe(
         client: &Client,
-        key_name: &str,
+        matcher: SSHKeyMatcher,
     ) -> Result<Vec<types::KeyPairInfo>, Error> {
-        println!("[SSHKey.describe] key_name {}", key_name);
-
-        match client.describe_key_pairs().key_names(key_name).send().await {
-            Ok(response) => {
-                let key_pairs = response.key_pairs.unwrap();
-                println!("[SSHKey.describe] success {:?}", key_pairs.len());
-                Ok(key_pairs)
+        let r = client.describe_key_pairs();
+        match matcher.clone() {
+            SSHKeyMatcher::Id(key_id) => {
+                let id_param = vec![key_id.clone()];
+                let r = r.set_key_pair_ids(Some(id_param)).send();
+                match r.await {
+                    Ok(response) => match response.key_pairs {
+                        Some(key_pairs) => match key_pairs.len() {
+                            0 => Ok(Vec::new()),
+                            _ => Ok(key_pairs.clone()),
+                        },
+                        None => Ok(Vec::new()),
+                    },
+                    Err(e) => unimplemented!(),
+                }
             }
-            Err(e) => {
-                println!("[SSHKey.describe] no key found");
-                Ok(Vec::new())
+            SSHKeyMatcher::Name(key_name) => {
+                let name_param = vec![key_name.clone()];
+                let r = r.set_key_names(Some(name_param)).send();
+                match r.await {
+                    Ok(response) => match response.key_pairs {
+                        Some(key_pairs) => match key_pairs.len() {
+                            0 => Ok(Vec::new()),
+                            _ => Ok(key_pairs.clone()),
+                        },
+                        None => Ok(Vec::new()),
+                    },
+                    // this happens when the key name isn't found
+                    Err(e) => Ok(Vec::new()),
+                }
             }
         }
     }
 
-    pub async fn delete(client: &Client, key_name: &str) -> Result<(), Error> {
-        match client
-            .delete_key_pair()
-            .set_key_name(Some(key_name.to_string()))
-            .send()
-            .await
-        {
-            Ok(response) => {
-                println!("[SSHKey.delete] success {}", key_name);
-                Ok(())
-            }
-            Err(e) => {
-                panic!("[SSHKey.delete] ERROR {}", e);
-            }
+    pub async fn delete(client: &Client, matcher: SSHKeyMatcher) -> Result<(), Error> {
+        let r = client.delete_key_pair();
+        let result = match matcher {
+            SSHKeyMatcher::Id(key_id) => r.set_key_pair_id(Some(key_id)),
+            SSHKeyMatcher::Name(key_name) => r.set_key_name(Some(key_name.to_string())),
+        };
+        match result.send().await {
+            Ok(_) => Ok(()),
+            Err(e) => unimplemented!(),
         }
     }
 }
@@ -466,7 +514,7 @@ impl Instances {
             .run_instances()
             .instance_type(types::InstanceType::T2Micro)
             .image_id(sc.ami.clone().unwrap())
-            .key_name(KEY_NAME)
+            .key_name(sc.tag_name.clone())
             .subnet_id(network.subnet_id.clone())
             .security_group_ids(network.security_group_id.clone())
             .tag_specifications(tag_specifications.clone())
@@ -496,7 +544,11 @@ impl Instances {
         Ok(instances)
     }
 
-    pub async fn describe(client: &Client, matcher: BeeMatcher) -> Result<Vec<Bee>, Error> {
+    pub async fn describe(
+        client: &Client,
+        matcher: BeeMatcher,
+        state: types::InstanceStateName,
+    ) -> Result<Vec<Bee>, Error> {
         println!("[Instances.describe]");
 
         let r = client.describe_instances();
@@ -524,11 +576,9 @@ impl Instances {
                             .clone()
                             .unwrap_or_default()
                             .iter()
-                            .filter(|&i| {
-                                matches!(
-                                    i.clone().state.clone().unwrap().name.unwrap(),
-                                    types::InstanceStateName::Running
-                                )
+                            .filter(|&i| match i.clone().state.unwrap().name {
+                                Some(name) => name.eq(&state),
+                                None => false,
                             })
                             .flat_map(|i| {
                                 Some(Bee {
@@ -548,47 +598,61 @@ impl Instances {
         client: &Client,
         sc: &SwarmConfig,
         matcher: &BeeMatcher,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<Bee>, Error> {
         // multiple branches below need this
-        async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<(), Error> {
+        async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
             let bee_ids = beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
-            let r = client.terminate_instances();
-            match r.set_instance_ids(Some(bee_ids)).send().await {
-                Ok(_) => Ok(()),
-                Err(e) => unimplemented!(),
+            match bee_ids.len() {
+                0 => Ok(Vec::new()),
+                _ => {
+                    let r = client.terminate_instances();
+                    match r.set_instance_ids(Some(bee_ids.clone())).send().await {
+                        Ok(_) => Ok(beez.clone()),
+                        Err(e) => unimplemented!(),
+                    }
+                }
             }
         }
 
         match matcher {
             // terminate list of ids
             BeeMatcher::Ids(beez) => match beez.len() {
-                0 => Ok(()),
+                0 => Ok(Vec::new()),
                 _ => terminate_beez(client, beez.clone()).await,
             },
             // convert tag into list of ids, then terminate
-            m @ BeeMatcher::Tagged(_) => match Instances::describe(client, m.clone()).await {
-                Ok(beez) => terminate_beez(client, beez.clone()).await,
-                _ => Ok(()),
-            },
+            m @ BeeMatcher::Tagged(_) => {
+                match Instances::describe(client, m.clone(), types::InstanceStateName::Running)
+                    .await
+                {
+                    Ok(beez) => terminate_beez(client, beez.clone()).await,
+                    _ => Ok(Vec::new()),
+                }
+            }
         }
     }
 
-    pub async fn wait_for_running(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
-        println!("[Instances.wait_for_running]");
+    pub async fn wait_for_state(
+        client: &Client,
+        beez: Vec<Bee>,
+        state: types::InstanceStateName,
+    ) -> Result<Vec<Bee>, Error> {
+        println!("[Instances.wait_for_state] {:?}", state);
         loop {
             let m = BeeMatcher::Ids(beez.clone());
-            let running_beez = Instances::describe(client, m).await.unwrap();
-
-            // return Ok when counts match
-            let delta = beez.len() - running_beez.len();
-            if delta == 0 {
-                return Ok(running_beez.clone());
+            match Instances::describe(client, m.clone(), state.clone()).await {
+                Ok(running_beez) => match beez.len() - running_beez.clone().len() {
+                    0 => return Ok(running_beez.clone()),
+                    delta => {
+                        println!(
+                            "[Instances.wait_for_running] waiting 15 seconds for {} beez",
+                            delta
+                        );
+                        tokio::time::sleep(Duration::from_secs(15)).await
+                    }
+                },
+                Err(e) => unimplemented!(),
             }
-            println!(
-                "[Instances.wait_for_running] waiting 15 seconds for {} beez",
-                delta
-            );
-            tokio::time::sleep(Duration::from_secs(15)).await;
         }
     }
 }
