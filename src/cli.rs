@@ -13,32 +13,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    #[command(arg_required_else_help = true)]
     Init {
-        #[arg(required = true)]
-        name: String,
-
-        #[arg(default_value_t = 1)]
-        count: i32,
+        //config: String,
     },
 
     Tagged {
-        #[arg(required = true)]
-        name: String,
+        //config: String,
     },
 
-    #[command(arg_required_else_help = true)]
     Terminate {
-        #[arg(required = true)]
-        name: String,
+        //config: String,
     },
 
     Exec {
-        #[arg(required = true)]
-        name: String,
-
-        #[arg(short = 's')]
-        script: Option<String>,
+        //config: String,
     },
 }
 
@@ -50,8 +38,7 @@ pub async fn run(sc: &SwarmConfig) {
     };
 
     match args.command {
-        Commands::Init { name, count } => {
-            println!("[cli init] {name}");
+        Commands::Init {} => {
             let network = AWSNetwork::load_network(&client, sc).await.unwrap();
             let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
             println!("#####################");
@@ -69,17 +56,17 @@ pub async fn run(sc: &SwarmConfig) {
                     .join(", ")
             );
         }
-        Commands::Tagged { name } => {
-            println!("[cli tagged] {name}");
+        Commands::Tagged {} => {
+            println!("[cli tagged]");
             tagged::all_beez_tags().await;
         }
-        Commands::Terminate { name } => {
-            println!("[cli terminate] {name}");
+        Commands::Terminate {} => {
+            println!("[cli terminate]");
             Swarm::drop_swarm(&client, sc).await;
             AWSNetwork::drop_network(&client, sc).await;
         }
-        Commands::Exec { name, script } => {
-            println!("[cli exec] {name} {:?}", script);
+        Commands::Exec {} => {
+            println!("[cli exec]");
             let network = AWSNetwork::load_network(&client, sc).await.unwrap();
             let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
         }
