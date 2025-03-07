@@ -2,7 +2,7 @@
 
 _A tool for using pools of EC2 instances to do all kinds of things._
 
-This project is new. It needs to do some of the foundational stuff before it will feel polished, so bear with me as I work through that.
+This project is new and not yet complete. I am working through the foundational stuff and should have a full prototype together soon. As of now, all of the cloud management code works. Up next is controlling the instances via SSH.
 
 
 ## Overview 🏴‍☠️
@@ -11,17 +11,19 @@ Let's say you have a web system somewhere and you want to know how much load it 
 
 The main steps:
 1. Load or create a network on AWS
-2. Load or create some number of EC2 instances
-3. Use async pools of SSH connections for parallel control at scale
+2. Load or create some number of EC2 instances (_a swarm_)
+3. Use async pools of SSH connections to control swarm at scale
 4. Use this foundation to create network traffic at arbitrary scale for load testing
 
 Running `hostname` on 20 machines looks like this:
 
 ```shell
-$ beez init thebeez --count 20
-$ beez exec thebeez 'hostname'
-$ beez terminate thebeez
+$ beez init
+$ beez exec 'hostname'
+$ beez terminate
 ```
+
+A CLI param will exist soon that allows choosing a session config file, but for now it expects to see `sshpools.toml` in the dir where you run the command.
 
 
 ## Session Config
@@ -32,7 +34,6 @@ All of the resources created by killabeez are tagged. A config file can also be 
 
 **Required Params**
 - `username`: SSH account username for remote instances
-- `key_file`: SSH public key for remote instances
 - `tag_name`: string used to tag all remote resources
 - `num_beez`: target count of instances running in pool
 
@@ -41,6 +42,8 @@ All of the resources created by killabeez are tagged. A config file can also be 
 - `subnet_id`: use this subnet instead of creating one
 - `security_group_id`: use this security group instead of creating one
 - `ami`: the OS image used to create instances
+- `key_id`: use this key for SSH instead of importing one
+- `key_file`: path to ssh public key to import (must be set if `key_id` is not)
 - `ssh_cidr_block`: used to restrict SSH access to instances. it is recommended you limit access to just your machine which looks like: _your ip address/32_ or `11.22.33.44/32`
 
 
