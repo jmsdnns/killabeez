@@ -1,7 +1,7 @@
 tag_name = "killabeez-test"
 num_beez = 2
-username = "ubuntu"
 key_file = "/home/username/.ssh/killabeez/id_ed25519.pub"
+# username = "ubuntu"
 # key_id = "key-xxxxxxxxxxxxxxxxx"
 # ssh_cidr_block = "your.ip.addr.ess/0"
 # vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
