@@ -19,9 +19,12 @@ Running `hostname` on 20 machines looks like this:
 
 ```shell
 $ beez init
-$ beez exec 'hostname'
+$ beez exec
 $ beez terminate
 ```
+
+> !IMPORTANT
+> The exec command will be more flexible soon. It simply runs `ls` on the instances until I've put more time in. Getting there!
 
 
 ## Resource Management
