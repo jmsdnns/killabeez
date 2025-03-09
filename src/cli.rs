@@ -4,8 +4,11 @@ use crate::aws::{ec2, tagged};
 use crate::config::SwarmConfig;
 use crate::scenarios::{AWSNetwork, Swarm};
 
+const ABOUT_CLI: &str = "killabeez: a CLI for creating traffic jams of arbitrary scale";
+
 #[derive(Debug, Parser)]
-#[command(about = "A CLI for killabeez", long_about = None)]
+#[command(version)]
+#[command(about = ABOUT_CLI)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -13,10 +16,22 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Init { config: Option<String> },
-    Tagged { config: Option<String> },
-    Terminate { config: Option<String> },
-    Exec { config: Option<String> },
+    Init {
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
+    Tagged {
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
+    Terminate {
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
+    Exec {
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<String>,
+    },
 }
 
 pub fn config_or_default(config: Option<String>) -> String {
