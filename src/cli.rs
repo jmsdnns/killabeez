@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use crate::aws::{ec2, tagged};
 use crate::config::SwarmConfig;
 use crate::scenarios::{AWSNetwork, Swarm};
+use crate::ssh::SSHPool;
 
 const ABOUT_CLI: &str = "killabeez: a CLI for creating traffic jams of arbitrary scale";
 const DEFAULT_CONFIG: &str = "swarm.toml";
@@ -81,6 +82,17 @@ pub async fn run() {
             let network = AWSNetwork::load_network(&client, &sc).await.unwrap();
             let swarm = Swarm::load_swarm(&client, &sc, &network).await.unwrap();
             println!("{}", swarm);
+
+            let hosts = swarm
+                .instances
+                .iter()
+                .map(|i| i.ip.clone().unwrap())
+                .collect::<Vec<String>>();
+
+            let auth = SSHPool::load_key(&sc).unwrap();
+            let ssh_pool = SSHPool::new(&hosts, &sc.username.unwrap(), &auth).await;
+            let results = ssh_pool.exec("ls").await;
+            crate::ssh::print_results(results)
         }
     }
 }
