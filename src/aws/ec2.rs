@@ -83,7 +83,7 @@ impl VPC {
                 0 => None,
                 _ => Some(r.set_vpc_ids(Some(vpc_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
         };
 
         match request {
@@ -186,7 +186,7 @@ impl Subnet {
                 0 => None,
                 _ => Some(r.set_subnet_ids(Some(subnet_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
         };
 
         match request {
@@ -325,7 +325,7 @@ impl SecurityGroup {
                 0 => None,
                 _ => Some(r.set_group_ids(Some(sg_ids.clone())).send()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
         };
 
         match request {
@@ -560,7 +560,7 @@ impl Instances {
                     _ => Some(r.set_instance_ids(Some(ids_vec)).send()),
                 }
             }
-            BeeMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag)).send()),
+            BeeMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
         };
 
         match request {
@@ -577,7 +577,7 @@ impl Instances {
                             .unwrap_or_default()
                             .iter()
                             .filter(|&i| match i.clone().state.unwrap().name {
-                                Some(name) => name.eq(&state),
+                                Some(name) => name.eq(&state.clone()),
                                 None => false,
                             })
                             .flat_map(|i| {
@@ -632,24 +632,25 @@ impl Instances {
         }
     }
 
-    pub async fn wait_for_state(
+    pub async fn wait(
         client: &Client,
         beez: Vec<Bee>,
         state: types::InstanceStateName,
     ) -> Result<Vec<Bee>, Error> {
-        println!("[Instances.wait_for_state] {:?}", state);
+        let mut delta = beez.len();
+        let wait_seconds = 15;
         loop {
+            println!(
+                "[Instances] waiting {} seconds for {} beez",
+                wait_seconds, delta
+            );
+            tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
+
             let m = BeeMatcher::Ids(beez.clone());
             match Instances::describe(client, m.clone(), state.clone()).await {
                 Ok(running_beez) => match beez.len() - running_beez.clone().len() {
                     0 => return Ok(running_beez.clone()),
-                    delta => {
-                        println!(
-                            "[Instances.wait_for_running] waiting 15 seconds for {} beez",
-                            delta
-                        );
-                        tokio::time::sleep(Duration::from_secs(15)).await
-                    }
+                    d => delta = d,
                 },
                 Err(e) => unimplemented!(),
             }
