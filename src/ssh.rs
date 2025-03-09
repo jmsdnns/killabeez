@@ -1,8 +1,12 @@
 use async_ssh2_tokio::{
-    client::{AuthMethod, Client, CommandExecutedResult, ServerCheckMethod},
     Error,
+    client::{AuthMethod, Client, CommandExecutedResult, ServerCheckMethod},
 };
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
+
+use crate::aws::ec2::Bee;
+use crate::config::SwarmConfig;
+use crate::scenarios::Swarm;
 
 pub struct SSHConnection {
     client: Client,
@@ -35,11 +39,16 @@ pub struct SSHPool {
 }
 
 impl SSHPool {
-    pub async fn new(hosts: &Vec<&str>, username: &str, auth: &AuthMethod) -> SSHPool {
+    pub fn load_key(sc: &SwarmConfig) -> Option<AuthMethod> {
+        sc.private_key_file()
+            .map(|pkf| AuthMethod::with_key_file(std::path::Path::new(&pkf), None))
+    }
+
+    pub async fn new(hosts: &Vec<String>, username: &str, auth: &AuthMethod) -> SSHPool {
         let concurrency: usize = 10;
 
         let results = stream::iter(hosts)
-            .map(|host| SSHConnection::open(hosts, username, &auth))
+            .map(|host| SSHConnection::open(host, username, auth))
             .buffer_unordered(concurrency)
             .collect::<Vec<SSHConnection>>()
             .await;

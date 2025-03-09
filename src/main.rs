@@ -1,9 +1,10 @@
 #![allow(dead_code, unused)]
 
-pub mod aws;
+mod aws;
 mod cli;
 mod config;
 mod scenarios;
+mod ssh;
 
 #[tokio::main]
 pub async fn main() {
