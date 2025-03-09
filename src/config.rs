@@ -33,22 +33,22 @@ impl fmt::Display for SwarmConfig {
              Num Beez:     {}\n\
              Username:     {}\n\
              Key File:     {}\n\
-             Key Id:       {}\n\
              SSH CIDR:     {}\n\
+             AMI:          {}\n\
+             Key Id:       {}\n\
              VPC Id:       {}\n\
              Subnet Id:    {}\n\
-             Sec Group Id: {}\n\
-             AMI:          {}",
+             Sec Group Id: {}",
             self.tag_name,
             self.num_beez,
             self.username,
-            self.key_file.clone().unwrap_or_default(),
-            self.key_id.clone().unwrap_or_default(),
-            self.ssh_cidr_block.clone().unwrap_or_default(),
-            self.vpc_id.clone().unwrap_or_default(),
-            self.subnet_id.clone().unwrap_or_default(),
-            self.security_group_id.clone().unwrap_or_default(),
-            self.ami.clone().unwrap_or_default(),
+            self.key_file.clone().unwrap_or("none".to_string()),
+            self.ssh_cidr_block.clone().unwrap_or("none".to_string()),
+            self.ami.clone().unwrap_or("none".to_string()),
+            self.key_id.clone().unwrap_or("none".to_string()),
+            self.vpc_id.clone().unwrap_or("none".to_string()),
+            self.subnet_id.clone().unwrap_or("none".to_string()),
+            self.security_group_id.clone().unwrap_or("none".to_string()),
         )
     }
 }
