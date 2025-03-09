@@ -9,19 +9,20 @@ use serde::{self, Deserialize};
 
 const DEFAULT_SSH_CIDR: &str = "0.0.0.0/0";
 const DEFAULT_AMI: &str = "ami-04b4f1a9cf54c11d0";
+const DEFAULT_USERNAME: &str = "ubuntu";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SwarmConfig {
     pub tag_name: String,
     pub num_beez: i32,
-    pub username: String,
+    pub ssh_cidr_block: Option<String>,
+    pub username: Option<String>,
+    pub ami: Option<String>,
     pub key_file: Option<String>,
     pub key_id: Option<String>,
-    pub ssh_cidr_block: Option<String>,
     pub vpc_id: Option<String>,
     pub subnet_id: Option<String>,
     pub security_group_id: Option<String>,
-    pub ami: Option<String>,
 }
 
 impl fmt::Display for SwarmConfig {
@@ -31,20 +32,20 @@ impl fmt::Display for SwarmConfig {
             "CONFIG ]---------------------------\n\
              Tag Name:     {}\n\
              Num Beez:     {}\n\
-             Username:     {}\n\
-             Key File:     {}\n\
              SSH CIDR:     {}\n\
+             Username:     {}\n\
              AMI:          {}\n\
+             Key File:     {}\n\
              Key Id:       {}\n\
              VPC Id:       {}\n\
              Subnet Id:    {}\n\
              Sec Group Id: {}",
             self.tag_name,
             self.num_beez,
-            self.username,
-            self.key_file.clone().unwrap_or("none".to_string()),
             self.ssh_cidr_block.clone().unwrap_or("none".to_string()),
+            self.username.clone().unwrap_or("none".to_string()),
             self.ami.clone().unwrap_or("none".to_string()),
+            self.key_file.clone().unwrap_or("none".to_string()),
             self.key_id.clone().unwrap_or("none".to_string()),
             self.vpc_id.clone().unwrap_or("none".to_string()),
             self.subnet_id.clone().unwrap_or("none".to_string()),
@@ -62,9 +63,18 @@ impl SwarmConfig {
             Some(cb) => Some(cb.clone()),
         };
 
+        sc.username = match &sc.username {
+            None => Some(DEFAULT_USERNAME.to_string()),
+            Some(username) => Some(username.to_string()),
+        };
+
         sc.ami = match &sc.ami {
             None => Some(DEFAULT_AMI.to_string()),
             Some(ami) => Some(ami.to_string()),
+        };
+
+        if sc.key_file.is_none() && sc.key_id.is_none() {
+            panic!("ERROR: swarm config must contain a key_file or a key_id");
         };
 
         Ok(sc)
