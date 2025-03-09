@@ -13,24 +13,20 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Init {
-        //config: String,
-    },
-
-    Tagged {
-        //config: String,
-    },
-
-    Terminate {
-        //config: String,
-    },
-
-    Exec {
-        //config: String,
-    },
+    Init { config: Option<String> },
+    Tagged { config: Option<String> },
+    Terminate { config: Option<String> },
+    Exec { config: Option<String> },
 }
 
-pub async fn run(sc: &SwarmConfig) {
+pub fn config_or_default(config: Option<String>) -> String {
+    match config {
+        Some(filename) => filename.clone(),
+        None => "sshpools.toml".to_string(),
+    }
+}
+
+pub async fn run() {
     let args = Cli::parse();
 
     let Ok(client) = ec2::mk_client().await else {
@@ -38,37 +34,37 @@ pub async fn run(sc: &SwarmConfig) {
     };
 
     match args.command {
-        Commands::Init {} => {
-            let network = AWSNetwork::load_network(&client, sc).await.unwrap();
-            let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
-            println!("#####################");
-            println!("VPC ID:    {}", network.vpc_id);
-            println!("Subnet ID: {}", network.subnet_id);
-            println!("SG ID:     {}", network.security_group_id);
-            println!("SSH Key:   {}", swarm.key_pair);
-            println!(
-                "Instances: {}",
-                swarm
-                    .instances
-                    .iter()
-                    .map(|b| b.ip.clone().unwrap())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+        Commands::Init { config } => {
+            println!("[cli init]");
+            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            println!("{}", sc);
+
+            let network = AWSNetwork::load_network(&client, &sc).await.unwrap();
+            let swarm = Swarm::load_swarm(&client, &sc, &network).await.unwrap();
+            println!("{}", swarm);
         }
-        Commands::Tagged {} => {
+        Commands::Tagged { config } => {
             println!("[cli tagged]");
+            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+
             tagged::all_beez_tags().await;
         }
-        Commands::Terminate {} => {
+        Commands::Terminate { config } => {
             println!("[cli terminate]");
-            Swarm::drop_swarm(&client, sc).await;
-            AWSNetwork::drop_network(&client, sc).await;
+            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            println!("{}", sc);
+
+            Swarm::drop_swarm(&client, &sc).await;
+            AWSNetwork::drop_network(&client, &sc).await;
         }
-        Commands::Exec {} => {
+        Commands::Exec { config } => {
             println!("[cli exec]");
-            let network = AWSNetwork::load_network(&client, sc).await.unwrap();
-            let swarm = Swarm::load_swarm(&client, sc, &network).await.unwrap();
+            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            println!("{}", sc);
+
+            let network = AWSNetwork::load_network(&client, &sc).await.unwrap();
+            let swarm = Swarm::load_swarm(&client, &sc, &network).await.unwrap();
+            println!("{}", swarm);
         }
     }
 }
