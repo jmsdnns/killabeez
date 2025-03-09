@@ -1,5 +1,6 @@
 use aws_sdk_ec2::waiters::security_group_exists;
 use aws_sdk_ec2::{Client, Error, types::InstanceStateName};
+use std::fmt;
 
 use crate::aws::ec2::{
     Bee, BeeMatcher, Instances, ResourceMatcher, SSHKey, SSHKeyMatcher, SecurityGroup, Subnet, VPC,
@@ -12,6 +13,19 @@ pub struct AWSNetwork {
     pub vpc_id: String,
     pub subnet_id: String,
     pub security_group_id: String,
+}
+
+impl fmt::Display for AWSNetwork {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NETWORK ]--------------------------\n\
+             VPC ID:    {}\n\
+             Subnet ID: {}\n\
+             SG ID:     {}",
+            self.vpc_id, self.subnet_id, self.security_group_id,
+        )
+    }
 }
 
 impl AWSNetwork {
@@ -250,6 +264,25 @@ pub struct Swarm {
     pub network: AWSNetwork,
     pub key_pair: String,
     pub instances: Vec<Bee>,
+}
+
+impl fmt::Display for Swarm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "SWARM ]----------------------------\n\
+             Instances: {}\n\
+             SSH Key:   {}\n\
+             {}",
+            self.instances
+                .iter()
+                .map(|b| b.ip.clone().unwrap())
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.key_pair,
+            self.network,
+        )
+    }
 }
 
 impl Swarm {
