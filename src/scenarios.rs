@@ -29,6 +29,68 @@ impl fmt::Display for AWSNetwork {
 }
 
 impl AWSNetwork {
+    pub async fn init_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Error> {
+        println!("[load_network]");
+
+        let vpc_id = match AWSNetwork::init_vpc(client, sc).await {
+            Ok(vpc_id) => vpc_id,
+            Err(e) => unimplemented!(),
+        };
+        let subnet_id = match AWSNetwork::init_subnet(client, sc, &vpc_id).await {
+            Ok(subnet_id) => subnet_id,
+            Err(e) => unimplemented!(),
+        };
+        let security_group_id =
+            match AWSNetwork::init_security_group(client, sc, &vpc_id, &subnet_id).await {
+                Ok(sg_id) => sg_id,
+                Err(e) => unimplemented!(),
+            };
+
+        Ok(AWSNetwork {
+            vpc_id: vpc_id.clone(),
+            subnet_id: subnet_id.clone(),
+            security_group_id: security_group_id.clone(),
+        })
+    }
+
+    async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+        match AWSNetwork::load_vpc(client, sc).await {
+            Ok(Some(vpc_id)) => Ok(vpc_id),
+            Ok(None) => match VPC::create(client, sc).await {
+                Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
+                Err(e) => unimplemented!(),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
+    async fn init_subnet(client: &Client, sc: &SwarmConfig, vpc_id: &str) -> Result<String, Error> {
+        match AWSNetwork::load_subnet(client, sc, vpc_id).await {
+            Ok(Some(subnet_id)) => Ok(subnet_id),
+            Ok(None) => match Subnet::create(client, sc, vpc_id).await {
+                Ok(subnet) => Ok(subnet.subnet_id.unwrap().clone()),
+                Err(e) => unimplemented!(),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
+    async fn init_security_group(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+        subnet_id: &str,
+    ) -> Result<String, Error> {
+        match AWSNetwork::load_security_group(client, sc, vpc_id, subnet_id).await {
+            Ok(Some(sg_id)) => Ok(sg_id),
+            Ok(None) => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
+                Ok(sg_id) => Ok(sg_id.clone()),
+                Err(e) => unimplemented!(),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
     pub async fn load_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Error> {
         println!("[load_network]");
 
@@ -56,7 +118,7 @@ impl AWSNetwork {
         })
     }
 
-    pub async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
+    async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
         println!("[load_vpc]");
 
         let existing_vpc_id = match sc.vpc_id.clone() {
@@ -89,18 +151,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        match AWSNetwork::load_vpc(client, sc).await {
-            Ok(Some(vpc_id)) => Ok(vpc_id),
-            Ok(None) => match VPC::create(client, sc).await {
-                Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
-                Err(e) => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
-        }
-    }
-
-    pub async fn load_subnet(
+    async fn load_subnet(
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
@@ -137,22 +188,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn init_subnet(
-        client: &Client,
-        sc: &SwarmConfig,
-        vpc_id: &str,
-    ) -> Result<String, Error> {
-        match AWSNetwork::load_subnet(client, sc, vpc_id).await {
-            Ok(Some(subnet_id)) => Ok(subnet_id),
-            Ok(None) => match Subnet::create(client, sc, vpc_id).await {
-                Ok(subnet) => Ok(subnet.subnet_id.unwrap().clone()),
-                Err(e) => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
-        }
-    }
-
-    pub async fn load_security_group(
+    async fn load_security_group(
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
@@ -193,22 +229,6 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn init_security_group(
-        client: &Client,
-        sc: &SwarmConfig,
-        vpc_id: &str,
-        subnet_id: &str,
-    ) -> Result<String, Error> {
-        match AWSNetwork::load_security_group(client, sc, vpc_id, subnet_id).await {
-            Ok(Some(sg_id)) => Ok(sg_id),
-            Ok(None) => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
-                Ok(sg_id) => Ok(sg_id.clone()),
-                Err(e) => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
-        }
-    }
-
     pub async fn drop_network(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_network]");
 
@@ -230,7 +250,7 @@ impl AWSNetwork {
         typed_ok
     }
 
-    pub async fn drop_security_group(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_security_group(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_security_group]");
         // let typed_ok: Result<(), Error> = Ok(());
 
@@ -249,7 +269,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn drop_subnet(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_subnet(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_subnet]");
         match &sc.subnet_id {
             Some(subnet_id) => Ok(()),
@@ -264,7 +284,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn drop_vpc(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_vpc(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_vpc]");
         match &sc.vpc_id {
             Some(vpc_id) => Ok(()),
@@ -308,19 +328,18 @@ impl fmt::Display for Swarm {
 }
 
 impl Swarm {
-    pub async fn load_swarm(
+    pub async fn init_swarm(
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
     ) -> Result<Self, Error> {
         println!("[load_swarm]");
 
-        let key_pair = match Swarm::load_key_pair(client, sc).await {
-            Ok(Some(key_id)) => key_id,
-            Ok(None) => unimplemented!(),
+        let key_pair = match Swarm::init_key_pair(client, sc).await {
+            Ok(key_id) => key_id,
             Err(e) => unimplemented!(),
         };
-        let instances = match Swarm::load_instances(client, sc, network).await {
+        let instances = match Swarm::run_instances(client, sc, network).await {
             Ok(instances) => instances.clone(),
             Err(e) => unimplemented!(),
         };
@@ -333,7 +352,46 @@ impl Swarm {
         })
     }
 
-    pub async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
+    async fn init_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+        match Swarm::load_key_pair(client, sc).await {
+            Ok(Some(key_id)) => Ok(key_id),
+            Ok(None) => match sc.key_file.clone() {
+                Some(key) => match SSHKey::import(client, sc).await {
+                    Ok(key_id) => Ok(key_id),
+                    Err(e) => unimplemented!(),
+                },
+                None => unimplemented!(),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
+    pub async fn load_swarm(
+        client: &Client,
+        sc: &SwarmConfig,
+        network: &AWSNetwork,
+    ) -> Result<Self, Error> {
+        println!("[load_swarm]");
+
+        let key_pair = match Swarm::load_key_pair(client, sc).await {
+            Ok(Some(key_id)) => key_id,
+            Ok(None) => unimplemented!(),
+            Err(e) => unimplemented!(),
+        };
+        let instances = match Swarm::run_instances(client, sc, network).await {
+            Ok(instances) => instances.clone(),
+            Err(e) => unimplemented!(),
+        };
+
+        Ok(Swarm {
+            config: sc.clone(),
+            network: network.clone(),
+            key_pair: key_pair.clone(),
+            instances: instances.clone(),
+        })
+    }
+
+    async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
         println!("[load_key_pair]");
 
         // key id found in config, try to load key
@@ -369,34 +427,20 @@ impl Swarm {
         }
     }
 
-    pub async fn import_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        match Swarm::load_key_pair(client, sc).await {
-            Ok(Some(key_id)) => Ok(key_id),
-            Ok(None) => match sc.key_file.clone() {
-                Some(key) => match SSHKey::import(client, sc).await {
-                    Ok(key_id) => Ok(key_id),
-                    Err(e) => unimplemented!(),
-                },
-                None => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
-        }
-    }
-
-    pub async fn load_instances(
+    async fn run_instances(
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
     ) -> Result<Vec<Bee>, Error> {
-        println!("[load_instances]");
+        println!("[run_instances]");
 
         // load id and ip for all tagged instances
         let m = BeeMatcher::Tagged(sc.tag_name.clone());
         let mut instances = match Instances::describe(client, m, InstanceStateName::Running).await {
             Ok(instances) => instances.clone(),
-            Err(e) => unimplemented!(),
+            Err(e) => panic!("This crashed for some reason: {}", e),
         };
-        println!("[load_instances] existing {}", instances.len());
+        println!("[run_instances] existing {}", instances.len());
 
         // create or terminate instances so count match appconfig
         let num_instances = instances.len() as i32;
@@ -404,7 +448,7 @@ impl Swarm {
             // start additional instances
             num_beez if num_beez > num_instances => {
                 let additional = num_beez - num_instances;
-                println!("[load_instances] adding instances {}", additional);
+                println!("[run_instances] adding instances {}", additional);
                 match Instances::create(client, sc, network, Some(additional)).await {
                     Ok(new_beez) => [instances, new_beez].concat(),
                     Err(e) => unimplemented!(),
@@ -423,13 +467,13 @@ impl Swarm {
 
             // correct number are ready
             _ => {
-                println!("[load_instances] right number instances");
+                println!("[run_instances] right number instances");
                 instances
             }
         };
 
         // wait for all to be fully initialized
-        match Instances::wait_for_state(client, loaded_beez, InstanceStateName::Running).await {
+        match Instances::wait(client, loaded_beez, InstanceStateName::Running).await {
             Ok(instances) => Ok(instances.clone()),
             Err(e) => unimplemented!(),
         }
@@ -452,7 +496,7 @@ impl Swarm {
         typed_ok
     }
 
-    pub async fn drop_instances(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_instances(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_instances]");
         let m = BeeMatcher::Tagged(sc.tag_name.clone());
         let beez = match Instances::delete(client, sc, &m.clone()).await {
@@ -460,13 +504,13 @@ impl Swarm {
             Err(e) => unimplemented!(),
         };
         // wait for all to be fully initialized
-        match Instances::wait_for_state(client, beez.clone(), InstanceStateName::Terminated).await {
+        match Instances::wait(client, beez.clone(), InstanceStateName::Terminated).await {
             Ok(_) => Ok(()),
             Err(e) => unimplemented!(),
         }
     }
 
-    pub async fn drop_key_pair(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_key_pair(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_key_pair]");
         match &sc.key_id.clone() {
             Some(key_id) => Ok(()),
