@@ -16,9 +16,19 @@ use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, ptr::read, time::
 
 use crate::{config::SwarmConfig, scenarios::AWSNetwork};
 
+// hard coded for now
+const CIDR_VPC: &str = "10.0.0.0/16";
+const CIDR_SUBNET: &str = "10.0.1.0/24";
+const CIDR_GATEWAY: &str = "0.0.0.0/0";
+
 pub async fn mk_client() -> Result<Client, Error> {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
     Ok(Client::new(&config))
+}
+
+pub async fn hold_on(duration: u64) {
+    // give it a moment
+    tokio::time::sleep(Duration::from_secs(duration)).await;
 }
 
 // Tags
@@ -60,7 +70,7 @@ impl VPC {
 
         let request = client
             .create_vpc()
-            .cidr_block("10.0.0.0/16")
+            .cidr_block(CIDR_VPC)
             .tag_specifications(tag_specifications)
             .send();
 
@@ -156,7 +166,7 @@ impl Subnet {
         let response = client
             .create_subnet()
             .vpc_id(vpc_id)
-            .cidr_block("10.0.1.0/24")
+            .cidr_block(CIDR_SUBNET)
             .tag_specifications(tag_specifications)
             .send()
             .await?;
@@ -380,6 +390,214 @@ impl SecurityGroup {
                     Err(e) => unimplemented!(),
                 }
             }
+        }
+    }
+}
+
+// Internet Gateway
+
+pub struct InternetGateway {}
+impl InternetGateway {
+    pub async fn create(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<types::InternetGateway, Error> {
+        let tag_specifications = create_tag_spec(sc, types::ResourceType::InternetGateway);
+        println!("[Gateway.create] vpc_id {}", vpc_id);
+        println!("[Gateway.create] tags: {:?}", tag_specifications);
+
+        let request = client
+            .create_internet_gateway()
+            .tag_specifications(tag_specifications)
+            .send();
+
+        let igw = match request.await {
+            Ok(response) => match response.internet_gateway.clone() {
+                Some(igw) => igw,
+                None => unimplemented!(),
+            },
+            Err(e) => panic!("[Gateway.create] ERROR {}", e),
+        };
+
+        match InternetGateway::attach(client, igw.clone(), vpc_id).await {
+            Ok(()) => Ok(igw),
+            Err(e) => panic!("[Gateway.create] ERROR {}", e),
+        }
+    }
+
+    pub async fn describe(
+        client: &Client,
+        matcher: ResourceMatcher,
+    ) -> Result<Vec<types::InternetGateway>, Error> {
+        let r = client.describe_internet_gateways();
+        let request = match matcher {
+            ResourceMatcher::Id(igw_ids) => match igw_ids.len() {
+                0 => None,
+                _ => Some(r.set_internet_gateway_ids(Some(igw_ids.clone())).send()),
+            },
+            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
+        };
+
+        match request {
+            None => Ok(Vec::new()),
+            Some(request) => match request.await {
+                Ok(response) => match response.internet_gateways {
+                    Some(igws) => match igws.len() {
+                        0 => Ok(Vec::new()),
+                        _ => Ok(igws.clone()),
+                    },
+                    None => Ok(Vec::new()),
+                },
+                Err(e) => panic!("[Gateway.describe] ERROR\n{}", e),
+            },
+        }
+    }
+
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
+        async fn terminate_ids(client: &Client, igw_ids: Vec<String>) -> Result<(), Error> {
+            match igw_ids.len() {
+                0 => Ok(()),
+                _ => match igw_ids.first() {
+                    Some(igw_id) => {
+                        match InternetGateway::detach(client, igw_id).await {
+                            Ok(()) => (),
+                            Err(e) => panic!("[Gateway.create] ERROR {}", e),
+                        };
+                        let r = client.delete_internet_gateway();
+                        match r.set_internet_gateway_id(Some(igw_id.clone())).send().await {
+                            Ok(_) => Ok(()),
+                            Err(e) => unimplemented!(),
+                        }
+                    }
+                    None => Ok(()),
+                },
+            }
+        }
+
+        match matcher {
+            ResourceMatcher::Id(igw_ids) => match igw_ids.len() {
+                0 => Ok(()),
+                _ => terminate_ids(client, igw_ids.clone()).await,
+            },
+            m @ ResourceMatcher::Tagged(_) => {
+                match InternetGateway::describe(client, m.clone()).await {
+                    Ok(igw_ids) => {
+                        let igw_ids = igw_ids
+                            .iter()
+                            .filter_map(|b| b.internet_gateway_id.clone())
+                            .collect::<Vec<String>>();
+                        match igw_ids.len() {
+                            0 => Ok(()),
+                            _ => terminate_ids(client, igw_ids).await,
+                        }
+                    }
+                    Err(e) => unimplemented!(),
+                }
+            }
+        }
+    }
+
+    pub async fn attached_vpc_id(client: &Client, igw_id: &str) -> Result<Option<String>, Error> {
+        match InternetGateway::describe(client, ResourceMatcher::Id(vec![igw_id.to_string()])).await
+        {
+            Ok(igws) => match igws.len() {
+                1 => match igws.first().unwrap().attachments().first() {
+                    Some(att) => Ok(Some(att.vpc_id.clone().unwrap())),
+                    _ => Ok(None),
+                },
+                _ => unimplemented!(),
+            },
+            Err(e) => panic!("OHHHHH NO {}", e),
+        }
+    }
+
+    pub async fn attach(
+        client: &Client,
+        igw: types::InternetGateway,
+        vpc_id: &str,
+    ) -> Result<(), Error> {
+        let igw_id = match igw.internet_gateway_id.clone() {
+            Some(igw_id) => igw_id,
+            None => panic!("No IGW found"),
+        };
+
+        // attach internet gateway to vpc
+        match client
+            .attach_internet_gateway()
+            .set_internet_gateway_id(Some(igw_id.to_string()))
+            .set_vpc_id(Some(vpc_id.to_string()))
+            .send()
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => panic!("[Gateway.create ERROR {}", e),
+        };
+
+        // give it a moment
+        hold_on(5).await;
+
+        // load vpc route tables
+        let rt_id = match client
+            .describe_route_tables()
+            .filters(
+                types::Filter::builder()
+                    .name("vpc-id")
+                    .values(vpc_id)
+                    .build(),
+            )
+            .send()
+            .await
+        {
+            Ok(request) => {
+                match request
+                    .route_tables
+                    .unwrap()
+                    .first()
+                    .unwrap()
+                    .route_table_id
+                    .clone()
+                {
+                    Some(rt_id) => rt_id,
+                    None => unimplemented!(),
+                }
+            }
+            Err(e) => panic!("[attach] {}", e),
+        };
+
+        println!("[Gateway.attach] route id {}", rt_id);
+
+        // create routes for public access
+        let request = client
+            .create_route()
+            .set_route_table_id(Some(rt_id))
+            .destination_cidr_block(CIDR_GATEWAY)
+            .set_gateway_id(Some(igw_id))
+            .send()
+            .await;
+        match request {
+            Ok(_) => Ok(()),
+            Err(e) => panic!("[Gateway.attach] ERROR {}", e),
+        }
+    }
+
+    pub async fn detach(client: &Client, igw_id: &str) -> Result<(), Error> {
+        let vpc_id = match InternetGateway::attached_vpc_id(client, igw_id).await {
+            Ok(Some(igw_id)) => igw_id,
+            Ok(None) => return Ok(()),
+            Err(e) => panic!("OHHHHH NO {}", e),
+        };
+
+        // detach internet gateway from vpc
+        match client
+            .detach_internet_gateway()
+            .set_internet_gateway_id(Some(igw_id.to_string()))
+            .set_vpc_id(Some(vpc_id.to_string()))
+            .send()
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => panic!("[Gateway.detach ERROR {}", e),
         }
     }
 }
@@ -644,7 +862,7 @@ impl Instances {
                 "[Instances] waiting {} seconds for {} beez",
                 wait_seconds, delta
             );
-            tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
+            hold_on(wait_seconds).await;
 
             let m = BeeMatcher::Ids(beez.clone());
             match Instances::describe(client, m.clone(), state.clone()).await {
