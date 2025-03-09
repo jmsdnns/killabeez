@@ -33,16 +33,19 @@ impl AWSNetwork {
         println!("[load_network]");
 
         let vpc_id = match AWSNetwork::load_vpc(client, sc).await {
-            Ok(vpc_id) => vpc_id,
+            Ok(Some(vpc_id)) => vpc_id,
+            Ok(None) => unimplemented!(),
             Err(e) => unimplemented!(),
         };
         let subnet_id = match AWSNetwork::load_subnet(client, sc, &vpc_id).await {
-            Ok(subnet_id) => subnet_id,
+            Ok(Some(subnet_id)) => subnet_id,
+            Ok(None) => unimplemented!(),
             Err(e) => unimplemented!(),
         };
         let security_group_id =
             match AWSNetwork::load_security_group(client, sc, &vpc_id, &subnet_id).await {
-                Ok(security_group_id) => security_group_id,
+                Ok(Some(sg_id)) => sg_id,
+                Ok(None) => unimplemented!(),
                 Err(e) => unimplemented!(),
             };
 
@@ -53,7 +56,7 @@ impl AWSNetwork {
         })
     }
 
-    pub async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+    pub async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
         println!("[load_vpc]");
 
         let existing_vpc_id = match sc.vpc_id.clone() {
@@ -70,29 +73,30 @@ impl AWSNetwork {
             None => None,
         };
 
-        let existing_vpc_id = match existing_vpc_id {
+        match existing_vpc_id {
             None => {
-                // try loading tag name
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
                 match VPC::describe(client, m).await {
                     Ok(vpcs) => match vpcs.len() {
-                        0 => None,
-                        _ => vpcs.first().unwrap().vpc_id.clone(),
+                        0 => Ok(None),
+                        1 => Ok(Some(vpcs.first().unwrap().vpc_id.clone().unwrap())),
+                        _ => unimplemented!(),
                     },
                     Err(e) => unimplemented!(),
                 }
             }
-            Some(vpc_id) => Some(vpc_id.clone()),
-        };
+            Some(vpc_id) => Ok(Some(vpc_id.clone())),
+        }
+    }
 
-        println!("[load vpc] sc.vpc_id {:?}", existing_vpc_id.clone());
-
-        match existing_vpc_id {
-            None => match VPC::create(client, sc).await {
+    pub async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+        match AWSNetwork::load_vpc(client, sc).await {
+            Ok(Some(vpc_id)) => Ok(vpc_id),
+            Ok(None) => match VPC::create(client, sc).await {
                 Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
                 Err(e) => unimplemented!(),
             },
-            Some(vpc_id) => Ok(vpc_id),
+            Err(e) => unimplemented!(),
         }
     }
 
@@ -100,7 +104,7 @@ impl AWSNetwork {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<String, Error> {
+    ) -> Result<Option<String>, Error> {
         println!("[load_subnet]");
 
         let existing_subnet_id = match sc.subnet_id.clone() {
@@ -117,27 +121,34 @@ impl AWSNetwork {
             None => None,
         };
 
-        let existing_subnet_id = match existing_subnet_id {
+        match existing_subnet_id {
             None => {
-                // try loading tag name
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
                 match Subnet::describe(client, m).await {
                     Ok(subnets) => match subnets.len() {
-                        0 => None,
-                        _ => subnets.first().unwrap().subnet_id.clone(),
+                        0 => Ok(None),
+                        1 => Ok(Some(subnets.first().unwrap().subnet_id.clone().unwrap())),
+                        _ => unimplemented!(),
                     },
                     Err(e) => unimplemented!(),
                 }
             }
-            Some(subnet_id) => Some(subnet_id.clone()),
-        };
+            Some(subnet_id) => Ok(Some(subnet_id.clone())),
+        }
+    }
 
-        match existing_subnet_id {
-            None => match Subnet::create(client, sc, vpc_id).await {
+    pub async fn init_subnet(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<String, Error> {
+        match AWSNetwork::load_subnet(client, sc, vpc_id).await {
+            Ok(Some(subnet_id)) => Ok(subnet_id),
+            Ok(None) => match Subnet::create(client, sc, vpc_id).await {
                 Ok(subnet) => Ok(subnet.subnet_id.unwrap().clone()),
                 Err(e) => unimplemented!(),
             },
-            Some(subnet_id) => Ok(subnet_id),
+            Err(e) => unimplemented!(),
         }
     }
 
@@ -146,7 +157,7 @@ impl AWSNetwork {
         sc: &SwarmConfig,
         vpc_id: &str,
         subnet_id: &str,
-    ) -> Result<String, Error> {
+    ) -> Result<Option<String>, Error> {
         println!("[load_security_group]");
 
         let existing_sg_id = match sc.security_group_id.clone() {
@@ -163,27 +174,38 @@ impl AWSNetwork {
             None => None,
         };
 
-        let existing_sg_id = match existing_sg_id {
+        match existing_sg_id {
             None => {
                 // try loading tag name
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
                 match SecurityGroup::describe(client, m).await {
                     Ok(security_groups) => match security_groups.len() {
-                        0 => None,
-                        _ => security_groups.first().unwrap().group_id.clone(),
+                        0 => Ok(None),
+                        1 => Ok(Some(
+                            security_groups.first().unwrap().group_id.clone().unwrap(),
+                        )),
+                        _ => unimplemented!(),
                     },
                     Err(e) => unimplemented!(),
                 }
             }
-            Some(sg_id) => Some(sg_id.clone()),
-        };
+            Some(sg_id) => Ok(Some(sg_id.clone())),
+        }
+    }
 
-        match existing_sg_id {
-            None => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
+    pub async fn init_security_group(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+        subnet_id: &str,
+    ) -> Result<String, Error> {
+        match AWSNetwork::load_security_group(client, sc, vpc_id, subnet_id).await {
+            Ok(Some(sg_id)) => Ok(sg_id),
+            Ok(None) => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
                 Ok(sg_id) => Ok(sg_id.clone()),
                 Err(e) => unimplemented!(),
             },
-            Some(sg_id) => Ok(sg_id.clone()),
+            Err(e) => unimplemented!(),
         }
     }
 
@@ -294,7 +316,8 @@ impl Swarm {
         println!("[load_swarm]");
 
         let key_pair = match Swarm::load_key_pair(client, sc).await {
-            Ok(key_id) => key_id,
+            Ok(Some(key_id)) => key_id,
+            Ok(None) => unimplemented!(),
             Err(e) => unimplemented!(),
         };
         let instances = match Swarm::load_instances(client, sc, network).await {
@@ -310,7 +333,7 @@ impl Swarm {
         })
     }
 
-    pub async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+    pub async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
         println!("[load_key_pair]");
 
         // key id found in config, try to load key
@@ -329,31 +352,34 @@ impl Swarm {
         };
 
         // no key id found in config, try loading by name (tag_name)
-        let existing_key_id = match existing_key_id {
+        match existing_key_id {
             None => {
                 // try loading tag name
                 let m = SSHKeyMatcher::Name(sc.tag_name.clone());
                 match SSHKey::describe(client, m).await {
                     Ok(key_infos) => match key_infos.len() {
-                        0 => None,
-                        _ => key_infos.first().unwrap().key_pair_id.clone(),
+                        0 => Ok(None),
+                        1 => Ok(key_infos.first().unwrap().key_pair_id.clone()),
+                        _ => unimplemented!(),
                     },
                     Err(e) => unimplemented!(),
                 }
             }
-            Some(key_id) => Some(key_id.clone()),
-        };
+            Some(key_id) => Ok(Some(key_id.clone())),
+        }
+    }
 
-        // no key found so far, check if config has `key_file` and import it
-        match existing_key_id {
-            None => match sc.key_file.clone() {
+    pub async fn import_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+        match Swarm::load_key_pair(client, sc).await {
+            Ok(Some(key_id)) => Ok(key_id),
+            Ok(None) => match sc.key_file.clone() {
                 Some(key) => match SSHKey::import(client, sc).await {
                     Ok(key_id) => Ok(key_id),
                     Err(e) => unimplemented!(),
                 },
                 None => unimplemented!(),
             },
-            Some(key_id) => Ok(key_id),
+            Err(e) => unimplemented!(),
         }
     }
 
