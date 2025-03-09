@@ -23,7 +23,7 @@ $ beez exec
 $ beez terminate
 ```
 
-> ![IMPORTANT]
+> [!IMPORTANT]
 > The exec command will be more flexible soon. It simply runs `ls` on the instances until I've put more time in. Getting there!
 
 
