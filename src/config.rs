@@ -18,7 +18,7 @@ pub struct SwarmConfig {
     pub ssh_cidr_block: Option<String>,
     pub username: Option<String>,
     pub ami: Option<String>,
-    pub key_file: Option<String>,
+    pub public_key_file: Option<String>,
     pub key_id: Option<String>,
     pub vpc_id: Option<String>,
     pub subnet_id: Option<String>,
@@ -35,7 +35,7 @@ impl fmt::Display for SwarmConfig {
              SSH CIDR:     {}\n\
              Username:     {}\n\
              AMI:          {}\n\
-             Key File:     {}\n\
+             Pub Key File: {}\n\
              Key Id:       {}\n\
              VPC Id:       {}\n\
              Subnet Id:    {}\n\
@@ -45,7 +45,7 @@ impl fmt::Display for SwarmConfig {
             self.ssh_cidr_block.clone().unwrap_or("none".to_string()),
             self.username.clone().unwrap_or("none".to_string()),
             self.ami.clone().unwrap_or("none".to_string()),
-            self.key_file.clone().unwrap_or("none".to_string()),
+            self.public_key_file.clone().unwrap_or("none".to_string()),
             self.key_id.clone().unwrap_or("none".to_string()),
             self.vpc_id.clone().unwrap_or("none".to_string()),
             self.subnet_id.clone().unwrap_or("none".to_string()),
@@ -73,10 +73,20 @@ impl SwarmConfig {
             Some(ami) => Some(ami.to_string()),
         };
 
-        if sc.key_file.is_none() && sc.key_id.is_none() {
-            panic!("ERROR: swarm config must contain a key_file or a key_id");
+        if sc.public_key_file.is_none() && sc.key_id.is_none() {
+            panic!("ERROR: swarm config must contain a public_key_file or a key_id");
         };
 
         Ok(sc)
+    }
+
+    pub fn private_key_file(&self) -> Option<String> {
+        match self.public_key_file.clone() {
+            Some(mut pkf) => match pkf.ends_with(".pub") {
+                true => Some(pkf[..pkf.len() - 4].to_string()),
+                false => unimplemented!(),
+            },
+            None => None,
+        }
     }
 }

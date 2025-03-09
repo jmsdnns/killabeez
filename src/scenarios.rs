@@ -355,7 +355,7 @@ impl Swarm {
     async fn init_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
         match Swarm::load_key_pair(client, sc).await {
             Ok(Some(key_id)) => Ok(key_id),
-            Ok(None) => match sc.key_file.clone() {
+            Ok(None) => match sc.public_key_file.clone() {
                 Some(key) => match SSHKey::import(client, sc).await {
                     Ok(key_id) => Ok(key_id),
                     Err(e) => unimplemented!(),

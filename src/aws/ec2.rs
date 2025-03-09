@@ -395,18 +395,18 @@ pub enum SSHKeyMatcher {
 pub struct SSHKey {}
 impl SSHKey {
     pub async fn import(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        println!("[SSHKey.import] key_file {:?}", sc.key_file.clone());
+        println!("[SSHKey.import] key_file {:?}", sc.public_key_file.clone());
 
-        let Some(key_file) = sc.key_file.clone() else {
+        let Some(pk_file) = sc.public_key_file.clone() else {
             unimplemented!()
         };
 
         let tag_specifications = create_tag_spec(sc, types::ResourceType::KeyPair);
 
-        let key_path = PathBuf::from(&key_file);
-        println!("[SSHKey.import] key_file {:?}", fs::canonicalize(&key_path));
+        let pk_path = PathBuf::from(&pk_file);
+        println!("[SSHKey.import] key_file {:?}", fs::canonicalize(&pk_path));
 
-        let key_material = match std::fs::read_to_string(&key_file) {
+        let key_material = match std::fs::read_to_string(&pk_file) {
             Ok(key_material) => key_material,
             Err(e) => panic!("[SSHKey.import] read_to_string\n{}", e),
         };
