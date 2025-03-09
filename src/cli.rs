@@ -5,6 +5,7 @@ use crate::config::SwarmConfig;
 use crate::scenarios::{AWSNetwork, Swarm};
 
 const ABOUT_CLI: &str = "killabeez: a CLI for creating traffic jams of arbitrary scale";
+const DEFAULT_CONFIG: &str = "swarm.toml";
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -37,7 +38,7 @@ enum Commands {
 pub fn config_or_default(config: Option<String>) -> String {
     match config {
         Some(filename) => filename.clone(),
-        None => "sshpools.toml".to_string(),
+        None => DEFAULT_CONFIG.to_string(),
     }
 }
 
