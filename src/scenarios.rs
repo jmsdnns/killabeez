@@ -3,7 +3,8 @@ use aws_sdk_ec2::{Client, Error, types::InstanceStateName};
 use std::fmt;
 
 use crate::aws::ec2::{
-    Bee, BeeMatcher, Instances, ResourceMatcher, SSHKey, SSHKeyMatcher, SecurityGroup, Subnet, VPC,
+    Bee, BeeMatcher, Instances, InternetGateway, ResourceMatcher, SSHKey, SSHKeyMatcher,
+    SecurityGroup, Subnet, VPC,
 };
 use crate::aws::{self, ec2};
 use crate::config::SwarmConfig;
@@ -45,6 +46,10 @@ impl AWSNetwork {
                 Ok(sg_id) => sg_id,
                 Err(e) => unimplemented!(),
             };
+        match AWSNetwork::init_internet_gateway(client, sc, &vpc_id).await {
+            Ok(_) => println!("created igw"),
+            Err(e) => unimplemented!(),
+        };
 
         Ok(AWSNetwork {
             vpc_id: vpc_id.clone(),
@@ -85,6 +90,21 @@ impl AWSNetwork {
             Ok(Some(sg_id)) => Ok(sg_id),
             Ok(None) => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
                 Ok(sg_id) => Ok(sg_id.clone()),
+                Err(e) => panic!("[init_security_group] {}", e),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
+    async fn init_internet_gateway(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<String, Error> {
+        match AWSNetwork::load_internet_gateway(client, sc, vpc_id).await {
+            Ok(Some(igw_id)) => Ok(igw_id),
+            Ok(None) => match InternetGateway::create(client, sc, vpc_id).await {
+                Ok(igw) => Ok(igw.internet_gateway_id.unwrap().clone()),
                 Err(e) => unimplemented!(),
             },
             Err(e) => unimplemented!(),
@@ -110,6 +130,11 @@ impl AWSNetwork {
                 Ok(None) => unimplemented!(),
                 Err(e) => unimplemented!(),
             };
+        match AWSNetwork::load_internet_gateway(client, sc, &vpc_id).await {
+            Ok(Some(igw_id)) => println!("loaded igw"),
+            Ok(None) => unimplemented!(),
+            Err(e) => unimplemented!(),
+        };
 
         Ok(AWSNetwork {
             vpc_id: vpc_id.clone(),
@@ -229,11 +254,35 @@ impl AWSNetwork {
         }
     }
 
+    async fn load_internet_gateway(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<Option<String>, Error> {
+        println!("[load_internet_gateway]");
+
+        let m = ResourceMatcher::Tagged(sc.tag_name.clone());
+        match InternetGateway::describe(client, m).await {
+            Ok(igws) => match igws.len() {
+                0 => Ok(None),
+                1 => Ok(Some(
+                    igws.first().unwrap().internet_gateway_id.clone().unwrap(),
+                )),
+                _ => unimplemented!(),
+            },
+            Err(e) => unimplemented!(),
+        }
+    }
+
     pub async fn drop_network(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
         println!("[drop_network]");
 
         let typed_ok: Result<(), Error> = Ok(());
 
+        match AWSNetwork::drop_internet_getway(client, sc).await {
+            Ok(()) => (),
+            Err(e) => unimplemented!(),
+        };
         match AWSNetwork::drop_security_group(client, sc).await {
             Ok(()) => &typed_ok,
             Err(e) => unimplemented!(),
@@ -296,6 +345,15 @@ impl AWSNetwork {
                     Err(e) => unimplemented!(),
                 }
             }
+        }
+    }
+
+    async fn drop_internet_getway(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+        println!("[drop_internet_gateway]");
+        let m = ResourceMatcher::Tagged(sc.tag_name.clone());
+        match InternetGateway::delete(client, m.clone()).await {
+            Ok(()) => Ok(()),
+            Err(e) => unimplemented!(),
         }
     }
 }
