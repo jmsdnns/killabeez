@@ -55,8 +55,8 @@ pub async fn run() {
             let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
             println!("{}", sc);
 
-            let network = AWSNetwork::load_network(&client, &sc).await.unwrap();
-            let swarm = Swarm::load_swarm(&client, &sc, &network).await.unwrap();
+            let network = AWSNetwork::init_network(&client, &sc).await.unwrap();
+            let swarm = Swarm::init_swarm(&client, &sc, &network).await.unwrap();
             println!("{}", swarm);
         }
         Commands::Tagged { config } => {
