@@ -27,9 +27,9 @@ const CIDR_VPC: &str = "10.0.0.0/16";
 const CIDR_SUBNET: &str = "10.0.1.0/24";
 const CIDR_GATEWAY: &str = "0.0.0.0/0";
 
-pub async fn mk_client() -> Result<Client, Error> {
+pub async fn mk_client() -> Client {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
-    Ok(Client::new(&config))
+    Client::new(&config)
 }
 
 pub async fn hold_on(duration: u64) {

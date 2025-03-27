@@ -46,9 +46,7 @@ pub fn config_or_default(config: Option<String>) -> String {
 pub async fn run() {
     let args = Cli::parse();
 
-    let Ok(client) = ec2::mk_client().await else {
-        panic!("[cli] error: mk_client");
-    };
+    let client = ec2::mk_client().await;
 
     match args.command {
         Commands::Init { config } => {
