@@ -579,51 +579,33 @@ impl SSHKey {
     pub async fn describe(
         client: &Client,
         matcher: SSHKeyMatcher,
-    ) -> Result<Vec<types::KeyPairInfo>, Error> {
-        let r = client.describe_key_pairs();
+    ) -> Result<Vec<types::KeyPairInfo>, Ec2Error> {
         match matcher.clone() {
-            SSHKeyMatcher::Id(key_id) => {
-                let id_param = vec![key_id.clone()];
-                let r = r.set_key_pair_ids(Some(id_param)).send();
-                match r.await {
-                    Ok(response) => match response.key_pairs {
-                        Some(key_pairs) => match key_pairs.len() {
-                            0 => Ok(Vec::new()),
-                            _ => Ok(key_pairs.clone()),
-                        },
-                        None => Ok(Vec::new()),
-                    },
-                    Err(e) => unimplemented!(),
-                }
-            }
-            SSHKeyMatcher::Name(key_name) => {
-                let name_param = vec![key_name.clone()];
-                let r = r.set_key_names(Some(name_param)).send();
-                match r.await {
-                    Ok(response) => match response.key_pairs {
-                        Some(key_pairs) => match key_pairs.len() {
-                            0 => Ok(Vec::new()),
-                            _ => Ok(key_pairs.clone()),
-                        },
-                        None => Ok(Vec::new()),
-                    },
-                    // this happens when the key name isn't found
-                    Err(e) => Ok(Vec::new()),
-                }
-            }
+            SSHKeyMatcher::Id(key_id) => Ok(client
+                .describe_key_pairs()
+                .set_key_pair_ids(Some(vec![key_id.clone()]))
+                .send()
+                .await?
+                .key_pairs
+                .unwrap()),
+            SSHKeyMatcher::Name(key_name) => Ok(client
+                .describe_key_pairs()
+                .set_key_names(Some(vec![key_name.clone()]))
+                .send()
+                .await?
+                .key_pairs
+                .unwrap()),
         }
     }
 
-    pub async fn delete(client: &Client, matcher: SSHKeyMatcher) -> Result<(), Error> {
-        let r = client.delete_key_pair();
-        let result = match matcher {
-            SSHKeyMatcher::Id(key_id) => r.set_key_pair_id(Some(key_id)),
-            SSHKeyMatcher::Name(key_name) => r.set_key_name(Some(key_name.to_string())),
+    pub async fn delete(client: &Client, matcher: SSHKeyMatcher) -> Result<(), Ec2Error> {
+        let mut r = client.delete_key_pair();
+        match matcher {
+            SSHKeyMatcher::Id(key_id) => r.clone().set_key_pair_id(Some(key_id)),
+            SSHKeyMatcher::Name(key_name) => r.clone().set_key_name(Some(key_name.to_string())),
         };
-        match result.send().await {
-            Ok(_) => Ok(()),
-            Err(e) => unimplemented!(),
-        }
+        r.send().await?;
+        Ok(())
     }
 }
 
