@@ -608,7 +608,7 @@ impl Instances {
             None => sc.num_beez,
         };
 
-        let response = client
+        Ok(client
             .run_instances()
             .instance_type(types::InstanceType::T2Micro)
             .image_id(sc.ami.clone().unwrap())
@@ -619,22 +619,14 @@ impl Instances {
             .min_count(new_beez)
             .max_count(new_beez)
             .send()
-            .await?;
-
-        if response.instances().is_empty() {
-            panic!("[Instances.create] ERROR no instances created");
-        }
-
-        let instances = response
+            .await?
             .instances()
             .iter()
             .map(|i| Bee {
                 id: i.instance_id.clone().unwrap(),
                 ip: i.public_ip_address.clone(),
             })
-            .collect::<Vec<Bee>>();
-
-        Ok(instances)
+            .collect::<Vec<Bee>>())
     }
 
     pub async fn describe(
