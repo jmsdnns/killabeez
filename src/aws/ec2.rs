@@ -1,22 +1,20 @@
-use aws_config::{ConfigLoader, meta::region::RegionProviderChain};
-use aws_sdk_ec2::{
-    Client, Error,
-    client::Waiters,
-    error::SdkError,
-    operation::{
-        create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder,
-        describe_instances::DescribeInstancesError, run_instances::RunInstancesError,
-        terminate_instances::TerminateInstancesError,
-    },
-    types::{
-        self,
-        builders::{
-            IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder, VpcBuilder,
-        },
-    },
-};
-use clap::builder::OsStr;
 use std::{collections::HashMap, fmt, fs, ops::Deref, path::PathBuf, ptr::read, time::Duration};
+
+use aws_config::ConfigLoader;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_ec2::client::Waiters;
+use aws_sdk_ec2::error::SdkError;
+use aws_sdk_ec2::operation::{
+    create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder,
+    describe_instances::DescribeInstancesError, run_instances::RunInstancesError,
+    terminate_instances::TerminateInstancesError,
+};
+use aws_sdk_ec2::types;
+use aws_sdk_ec2::types::builders::{
+    IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder, VpcBuilder,
+};
+use aws_sdk_ec2::{Client, Error};
+use clap::builder::OsStr;
 
 use crate::aws::errors::Ec2Error;
 use crate::config::SwarmConfig;

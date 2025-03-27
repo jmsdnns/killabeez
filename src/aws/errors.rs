@@ -1,23 +1,21 @@
 use std::fmt;
 
-use aws_sdk_ec2::{
-    error::SdkError,
-    operation::{
-        authorize_security_group_egress::AuthorizeSecurityGroupEgressError,
-        authorize_security_group_ingress::AuthorizeSecurityGroupIngressError,
-        create_internet_gateway::CreateInternetGatewayError,
-        create_security_group::CreateSecurityGroupError, create_subnet::CreateSubnetError,
-        create_vpc::CreateVpcError, delete_internet_gateway::DeleteInternetGatewayError,
-        delete_key_pair::DeleteKeyPairError, delete_security_group::DeleteSecurityGroupError,
-        delete_subnet::DeleteSubnetError, delete_vpc::DeleteVpcError,
-        describe_instances::DescribeInstancesError,
-        describe_internet_gateways::DescribeInternetGatewaysError,
-        describe_key_pairs::DescribeKeyPairsError,
-        describe_security_groups::DescribeSecurityGroupsError,
-        describe_subnets::DescribeSubnetsError, describe_vpcs::DescribeVpcsError,
-        import_key_pair::ImportKeyPairError, modify_subnet_attribute::ModifySubnetAttributeError,
-        run_instances::RunInstancesError, terminate_instances::TerminateInstancesError,
-    },
+use aws_sdk_ec2::error::SdkError;
+use aws_sdk_ec2::operation::{
+    authorize_security_group_egress::AuthorizeSecurityGroupEgressError,
+    authorize_security_group_ingress::AuthorizeSecurityGroupIngressError,
+    create_internet_gateway::CreateInternetGatewayError,
+    create_security_group::CreateSecurityGroupError, create_subnet::CreateSubnetError,
+    create_vpc::CreateVpcError, delete_internet_gateway::DeleteInternetGatewayError,
+    delete_key_pair::DeleteKeyPairError, delete_security_group::DeleteSecurityGroupError,
+    delete_subnet::DeleteSubnetError, delete_vpc::DeleteVpcError,
+    describe_instances::DescribeInstancesError,
+    describe_internet_gateways::DescribeInternetGatewaysError,
+    describe_key_pairs::DescribeKeyPairsError,
+    describe_security_groups::DescribeSecurityGroupsError, describe_subnets::DescribeSubnetsError,
+    describe_vpcs::DescribeVpcsError, import_key_pair::ImportKeyPairError,
+    modify_subnet_attribute::ModifySubnetAttributeError, run_instances::RunInstancesError,
+    terminate_instances::TerminateInstancesError,
 };
 
 #[derive(Debug)]
