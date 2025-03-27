@@ -3,7 +3,11 @@ use aws_sdk_ec2::{
     Client, Error,
     client::Waiters,
     error::SdkError,
-    operation::{create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder},
+    operation::{
+        create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder,
+        describe_instances::DescribeInstancesError, run_instances::RunInstancesError,
+        terminate_instances::TerminateInstancesError,
+    },
     types::{
         self,
         builders::{
@@ -12,9 +16,11 @@ use aws_sdk_ec2::{
     },
 };
 use clap::builder::OsStr;
-use std::{collections::HashMap, fs, ops::Deref, path::PathBuf, ptr::read, time::Duration};
+use std::{collections::HashMap, fmt, fs, ops::Deref, path::PathBuf, ptr::read, time::Duration};
 
-use crate::{config::SwarmConfig, scenarios::AWSNetwork};
+use crate::aws::errors::Ec2Error;
+use crate::config::SwarmConfig;
+use crate::scenarios::AWSNetwork;
 
 // hard coded for now
 const CIDR_VPC: &str = "10.0.0.0/16";
@@ -63,89 +69,63 @@ pub enum ResourceMatcher {
 
 pub struct VPC {}
 impl VPC {
-    pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Vpc, Error> {
+    pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Vpc, Ec2Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Vpc);
         println!("[VPC.create]");
         println!("[VPC.create] tags: {:?}", tag_specifications);
 
-        let request = client
+        Ok(client
             .create_vpc()
             .cidr_block(CIDR_VPC)
             .tag_specifications(tag_specifications)
-            .send();
-
-        match request.await {
-            Ok(response) => match response.vpc {
-                Some(vpc) => Ok(vpc.clone()),
-                None => unimplemented!(),
-            },
-            Err(e) => panic!("[VPC.create] ERROR\n{}", e),
-        }
+            .send()
+            .await?
+            .vpc
+            .unwrap())
     }
 
     pub async fn describe(
         client: &Client,
         matcher: ResourceMatcher,
-    ) -> Result<Vec<types::Vpc>, Error> {
-        let r = client.describe_vpcs();
-        let request = match matcher {
+    ) -> Result<Vec<types::Vpc>, Ec2Error> {
+        match matcher {
             ResourceMatcher::Id(vpc_ids) => match vpc_ids.len() {
-                0 => None,
-                _ => Some(r.set_vpc_ids(Some(vpc_ids.clone())).send()),
+                0 => Ok(Vec::new()),
+                _ => Ok(client
+                    .describe_vpcs()
+                    .set_vpc_ids(Some(vpc_ids.clone()))
+                    .send()
+                    .await?
+                    .vpcs
+                    .unwrap()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
-        };
-
-        match request {
-            None => Ok(Vec::new()),
-            Some(request) => match request.await {
-                Ok(response) => match response.vpcs {
-                    Some(vpcs) => match vpcs.len() {
-                        0 => Ok(Vec::new()),
-                        _ => Ok(vpcs.clone()),
-                    },
-                    None => unimplemented!(),
-                },
-                Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
-            },
+            ResourceMatcher::Tagged(tag) => Ok(client
+                .describe_vpcs()
+                .filters(create_tag_filter(&tag.clone()))
+                .send()
+                .await?
+                .vpcs
+                .unwrap()),
         }
     }
 
-    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
-        async fn terminate_ids(client: &Client, vpc_ids: Vec<String>) -> Result<(), Error> {
-            match vpc_ids.len() {
-                0 => Ok(()),
-                _ => {
-                    let r = client.delete_vpc();
-                    match vpc_ids.first() {
-                        Some(vpc_id) => match r.set_vpc_id(Some(vpc_id.clone())).send().await {
-                            Ok(_) => Ok(()),
-                            Err(e) => panic!("[OH NO] ERROR\n{}", e),
-                        },
-                        None => Ok(()),
-                    }
-                }
-            }
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Ec2Error> {
+        async fn terminate_ids(client: &Client, vpc_ids: Vec<String>) -> Result<(), Ec2Error> {
+            let vpc_id = vpc_ids.first().unwrap().to_owned();
+            client.delete_vpc().set_vpc_id(Some(vpc_id)).send().await?;
+            Ok(())
         }
 
         match matcher {
-            ResourceMatcher::Id(vpc_ids) => match vpc_ids.len() {
-                0 => Ok(()),
-                _ => terminate_ids(client, vpc_ids.clone()).await,
-            },
-            m @ ResourceMatcher::Tagged(_) => match VPC::describe(client, m.clone()).await {
-                Ok(vpcs) => {
-                    let vpc_ids = vpcs
-                        .iter()
-                        .filter_map(|b| b.vpc_id.clone())
-                        .collect::<Vec<String>>();
-                    match vpc_ids.len() {
-                        0 => Ok(()),
-                        _ => terminate_ids(client, vpc_ids.clone()).await,
-                    }
-                }
-                Err(e) => unimplemented!(),
-            },
+            ResourceMatcher::Id(vpc_ids) => terminate_ids(client, vpc_ids.clone()).await,
+            m @ ResourceMatcher::Tagged(_) => {
+                let vpc_ids = VPC::describe(client, m.clone())
+                    .await?
+                    .iter()
+                    .filter_map(|b| b.vpc_id.clone())
+                    .collect::<Vec<String>>();
+                terminate_ids(client, vpc_ids).await
+            }
         }
     }
 }
@@ -158,20 +138,21 @@ impl Subnet {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<types::Subnet, Error> {
+    ) -> Result<types::Subnet, Ec2Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Subnet);
         println!("[Subnet.create] vpc_id {}", vpc_id);
         println!("[Subnet.create] tags: {:?}", tag_specifications);
 
-        let response = client
+        let subnet = client
             .create_subnet()
             .vpc_id(vpc_id)
             .cidr_block(CIDR_SUBNET)
             .tag_specifications(tag_specifications)
             .send()
-            .await?;
+            .await?
+            .subnet
+            .unwrap();
 
-        let subnet = response.subnet.unwrap();
         let subnet_id = subnet.subnet_id().unwrap();
         println!("[Subnet.create] success {:?}", subnet_id);
 
@@ -183,7 +164,7 @@ impl Subnet {
             .await?;
         println!("[Subnet.create] maps public ip on launch");
 
-        Ok(subnet.clone())
+        Ok(subnet.to_owned())
     }
 
     pub async fn describe(
@@ -264,7 +245,7 @@ impl SecurityGroup {
         sc: &SwarmConfig,
         vpc_id: &str,
         subnet_id: &str,
-    ) -> Result<String, Error> {
+    ) -> Result<String, Ec2Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::SecurityGroup);
         let ssh_cidr_block = sc.ssh_cidr_block.clone().unwrap();
         println!("[SecurityGroup.create] tags {:?}", tag_specifications);
@@ -281,7 +262,6 @@ impl SecurityGroup {
             .await?;
 
         let sg_id = response.group_id.unwrap();
-
         println!("[SecurityGroup.create] success {:?}", sg_id);
 
         // Add ingress rule to allow SSH
@@ -302,7 +282,6 @@ impl SecurityGroup {
             ]))
             .send()
             .await?;
-
         println!("[SecurityGroup.create] ingress");
 
         // Add egress rule to allow all outbound traffic
@@ -319,7 +298,6 @@ impl SecurityGroup {
             ]))
             .send()
             .await?;
-
         println!("[SecurityGroup.create] egress");
 
         Ok(sg_id.clone())
@@ -402,23 +380,18 @@ impl InternetGateway {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<types::InternetGateway, Error> {
+    ) -> Result<types::InternetGateway, Ec2Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::InternetGateway);
         println!("[Gateway.create] vpc_id {}", vpc_id);
         println!("[Gateway.create] tags: {:?}", tag_specifications);
 
-        let request = client
+        let igw = client
             .create_internet_gateway()
             .tag_specifications(tag_specifications)
-            .send();
-
-        let igw = match request.await {
-            Ok(response) => match response.internet_gateway.clone() {
-                Some(igw) => igw,
-                None => unimplemented!(),
-            },
-            Err(e) => panic!("[Gateway.create] ERROR {}", e),
-        };
+            .send()
+            .await?
+            .internet_gateway
+            .unwrap();
 
         match InternetGateway::attach(client, igw.clone(), vpc_id).await {
             Ok(()) => Ok(igw),
@@ -612,7 +585,7 @@ pub enum SSHKeyMatcher {
 
 pub struct SSHKey {}
 impl SSHKey {
-    pub async fn import(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
+    pub async fn import(client: &Client, sc: &SwarmConfig) -> Result<String, Ec2Error> {
         println!("[SSHKey.import] key_file {:?}", sc.public_key_file.clone());
 
         let Some(pk_file) = sc.public_key_file.clone() else {
@@ -632,17 +605,15 @@ impl SSHKey {
 
         let key_blob = aws_sdk_ec2::primitives::Blob::new(key_material);
 
-        match client
+        Ok(client
             .import_key_pair()
             .key_name(sc.tag_name.clone())
             .public_key_material(key_blob)
             .tag_specifications(tag_specifications)
             .send()
-            .await
-        {
-            Ok(response) => Ok(response.key_pair_id.clone().unwrap()),
-            Err(e) => panic!("[SSHKey.import] ERROR import call\n{}", e),
-        }
+            .await?
+            .key_pair_id
+            .unwrap())
     }
 
     pub async fn describe(
@@ -719,7 +690,7 @@ impl Instances {
         sc: &SwarmConfig,
         network: &AWSNetwork,
         count_delta: Option<i32>,
-    ) -> Result<Vec<Bee>, Error> {
+    ) -> Result<Vec<Bee>, Ec2Error> {
         println!("[Instances.create]");
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Instance);
 
@@ -728,7 +699,7 @@ impl Instances {
             None => sc.num_beez,
         };
 
-        let response = match client
+        let response = client
             .run_instances()
             .instance_type(types::InstanceType::T2Micro)
             .image_id(sc.ami.clone().unwrap())
@@ -739,25 +710,20 @@ impl Instances {
             .min_count(new_beez)
             .max_count(new_beez)
             .send()
-            .await
-        {
-            Ok(instances) => instances,
-            Err(e) => panic!("[Instances.create] ERROR create {:?}", e),
-        };
+            .await?;
 
         if response.instances().is_empty() {
             panic!("[Instances.create] ERROR no instances created");
         }
 
         let instances = response
-            .instances
-            .unwrap()
+            .instances()
             .iter()
             .map(|i| Bee {
                 id: i.instance_id.clone().unwrap(),
                 ip: i.public_ip_address.clone(),
             })
-            .collect();
+            .collect::<Vec<Bee>>();
 
         Ok(instances)
     }
