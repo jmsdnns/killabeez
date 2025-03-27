@@ -387,25 +387,19 @@ impl InternetGateway {
         }
     }
 
-    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
-        async fn terminate_ids(client: &Client, igw_ids: Vec<String>) -> Result<(), Error> {
-            match igw_ids.len() {
-                0 => Ok(()),
-                _ => match igw_ids.first() {
-                    Some(igw_id) => {
-                        match InternetGateway::detach(client, igw_id).await {
-                            Ok(()) => (),
-                            Err(e) => panic!("[Gateway.create] ERROR {}", e),
-                        };
-                        let r = client.delete_internet_gateway();
-                        match r.set_internet_gateway_id(Some(igw_id.clone())).send().await {
-                            Ok(_) => Ok(()),
-                            Err(e) => unimplemented!(),
-                        }
-                    }
-                    None => Ok(()),
-                },
-            }
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Ec2Error> {
+        async fn terminate_ids(client: &Client, igw_ids: Vec<String>) -> Result<(), Ec2Error> {
+            let igw_id = igw_ids.first().unwrap().to_owned();
+            match InternetGateway::detach(client, &igw_id).await {
+                Ok(()) => (),
+                Err(e) => panic!("[Gateway.create] ERROR {}", e),
+            };
+            client
+                .delete_internet_gateway()
+                .set_internet_gateway_id(Some(igw_id.clone()))
+                .send()
+                .await?;
+            Ok(())
         }
 
         match matcher {
@@ -414,19 +408,12 @@ impl InternetGateway {
                 _ => terminate_ids(client, igw_ids.clone()).await,
             },
             m @ ResourceMatcher::Tagged(_) => {
-                match InternetGateway::describe(client, m.clone()).await {
-                    Ok(igw_ids) => {
-                        let igw_ids = igw_ids
-                            .iter()
-                            .filter_map(|b| b.internet_gateway_id.clone())
-                            .collect::<Vec<String>>();
-                        match igw_ids.len() {
-                            0 => Ok(()),
-                            _ => terminate_ids(client, igw_ids).await,
-                        }
-                    }
-                    Err(e) => unimplemented!(),
-                }
+                let igw_ids = InternetGateway::describe(client, m.clone())
+                    .await?
+                    .iter()
+                    .filter_map(|b| b.internet_gateway_id.clone())
+                    .collect::<Vec<String>>();
+                terminate_ids(client, igw_ids).await
             }
         }
     }
@@ -674,7 +661,7 @@ impl Instances {
         client: &Client,
         matcher: BeeMatcher,
         state: types::InstanceStateName,
-    ) -> Result<Vec<Bee>, Error> {
+    ) -> Result<Vec<Bee>, Ec2Error> {
         println!("[Instances.describe]");
 
         let r = client.describe_instances();
@@ -724,9 +711,9 @@ impl Instances {
         client: &Client,
         sc: &SwarmConfig,
         matcher: &BeeMatcher,
-    ) -> Result<Vec<Bee>, Error> {
+    ) -> Result<Vec<Bee>, Ec2Error> {
         // multiple branches below need this
-        async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Error> {
+        async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Ec2Error> {
             let bee_ids = beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
             match bee_ids.len() {
                 0 => Ok(Vec::new()),
