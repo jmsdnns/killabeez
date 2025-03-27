@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt, fs, ops::Deref, path::PathBuf, ptr::read, t
 
 use aws_config::ConfigLoader;
 use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_ec2::Client;
 use aws_sdk_ec2::client::Waiters;
 use aws_sdk_ec2::error::SdkError;
 use aws_sdk_ec2::operation::{
@@ -13,7 +14,6 @@ use aws_sdk_ec2::types;
 use aws_sdk_ec2::types::builders::{
     IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder, VpcBuilder,
 };
-use aws_sdk_ec2::{Client, Error};
 use clap::builder::OsStr;
 
 use crate::aws::errors::Ec2Error;
@@ -416,90 +416,74 @@ impl InternetGateway {
         }
     }
 
-    pub async fn attached_vpc_id(client: &Client, igw_id: &str) -> Result<Option<String>, Error> {
-        match InternetGateway::describe(client, ResourceMatcher::Id(vec![igw_id.to_string()])).await
-        {
-            Ok(igws) => match igws.len() {
-                1 => match igws.first().unwrap().attachments().first() {
-                    Some(att) => Ok(Some(att.vpc_id.clone().unwrap())),
-                    _ => Ok(None),
-                },
-                _ => unimplemented!(),
-            },
-            Err(e) => panic!("OHHHHH NO {}", e),
-        }
+    pub async fn attached_vpc_id(
+        client: &Client,
+        igw_id: &str,
+    ) -> Result<Option<String>, Ec2Error> {
+        let igws = InternetGateway::describe(client, ResourceMatcher::Id(vec![igw_id.to_string()]))
+            .await?;
+        Ok(igws
+            .first()
+            .unwrap()
+            .attachments()
+            .first()
+            .unwrap()
+            .vpc_id
+            .clone())
     }
 
     pub async fn attach(
         client: &Client,
         igw: types::InternetGateway,
         vpc_id: &str,
-    ) -> Result<(), Error> {
-        let igw_id = match igw.internet_gateway_id.clone() {
-            Some(igw_id) => igw_id,
-            None => panic!("No IGW found"),
-        };
+    ) -> Result<(), Ec2Error> {
+        let igw_id = igw.internet_gateway_id.clone().unwrap();
 
         // attach internet gateway to vpc
-        match client
+        client
             .attach_internet_gateway()
             .set_internet_gateway_id(Some(igw_id.to_string()))
             .set_vpc_id(Some(vpc_id.to_string()))
             .send()
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => panic!("[Gateway.create ERROR {}", e),
-        };
+            .await?;
 
         // give it a moment
         hold_on(5).await;
 
         // load vpc route tables
-        let rt_id = match client
+        let rt_id = client
             .describe_route_tables()
             .filters(
                 types::Filter::builder()
                     .name("vpc-id")
-                    .values(vpc_id)
+                    .values(vpc_id.to_string())
                     .build(),
             )
             .send()
-            .await
-        {
-            Ok(request) => {
-                match request
-                    .route_tables
-                    .unwrap()
-                    .first()
-                    .unwrap()
-                    .route_table_id
-                    .clone()
-                {
-                    Some(rt_id) => rt_id,
-                    None => unimplemented!(),
-                }
-            }
-            Err(e) => panic!("[attach] {}", e),
-        };
+            .await?
+            .route_tables
+            .unwrap()
+            .first()
+            .unwrap()
+            .route_table_id
+            .clone()
+            .unwrap();
 
         println!("[Gateway.attach] route id {}", rt_id);
 
         // create routes for public access
-        let request = client
+        client
             .create_route()
             .set_route_table_id(Some(rt_id))
             .destination_cidr_block(CIDR_GATEWAY)
             .set_gateway_id(Some(igw_id))
             .send()
-            .await;
-        match request {
-            Ok(_) => Ok(()),
-            Err(e) => panic!("[Gateway.attach] ERROR {}", e),
-        }
+            .await?;
+
+        Ok(())
     }
 
-    pub async fn detach(client: &Client, igw_id: &str) -> Result<(), Error> {
+    pub async fn detach(client: &Client, igw_id: &str) -> Result<(), Ec2Error> {
         let vpc_id = match InternetGateway::attached_vpc_id(client, igw_id).await {
             Ok(Some(igw_id)) => igw_id,
             Ok(None) => return Ok(()),
@@ -507,16 +491,14 @@ impl InternetGateway {
         };
 
         // detach internet gateway from vpc
-        match client
+        client
             .detach_internet_gateway()
             .set_internet_gateway_id(Some(igw_id.to_string()))
             .set_vpc_id(Some(vpc_id.to_string()))
             .send()
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(e) => panic!("[Gateway.detach ERROR {}", e),
-        }
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -747,7 +729,7 @@ impl Instances {
         client: &Client,
         beez: Vec<Bee>,
         state: types::InstanceStateName,
-    ) -> Result<Vec<Bee>, Error> {
+    ) -> Result<Vec<Bee>, Ec2Error> {
         let mut delta = beez.len();
         let wait_seconds = 15;
         loop {
@@ -758,12 +740,10 @@ impl Instances {
             hold_on(wait_seconds).await;
 
             let m = BeeMatcher::Ids(beez.clone());
-            match Instances::describe(client, m.clone(), state.clone()).await {
-                Ok(running_beez) => match beez.len() - running_beez.clone().len() {
-                    0 => return Ok(running_beez.clone()),
-                    d => delta = d,
-                },
-                Err(e) => unimplemented!(),
+            let running = Instances::describe(client, m.clone(), state.clone()).await?;
+            match beez.len() - running.clone().len() {
+                0 => return Ok(running.clone()),
+                d => delta = d,
             }
         }
     }

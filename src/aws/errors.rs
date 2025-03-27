@@ -1,21 +1,23 @@
 use std::fmt;
 
 use aws_sdk_ec2::error::SdkError;
+use aws_sdk_ec2::operation::attach_internet_gateway::AttachInternetGateway;
 use aws_sdk_ec2::operation::{
+    attach_internet_gateway::AttachInternetGatewayError,
     authorize_security_group_egress::AuthorizeSecurityGroupEgressError,
     authorize_security_group_ingress::AuthorizeSecurityGroupIngressError,
-    create_internet_gateway::CreateInternetGatewayError,
+    create_internet_gateway::CreateInternetGatewayError, create_route::CreateRouteError,
     create_security_group::CreateSecurityGroupError, create_subnet::CreateSubnetError,
     create_vpc::CreateVpcError, delete_internet_gateway::DeleteInternetGatewayError,
     delete_key_pair::DeleteKeyPairError, delete_security_group::DeleteSecurityGroupError,
     delete_subnet::DeleteSubnetError, delete_vpc::DeleteVpcError,
     describe_instances::DescribeInstancesError,
     describe_internet_gateways::DescribeInternetGatewaysError,
-    describe_key_pairs::DescribeKeyPairsError,
+    describe_key_pairs::DescribeKeyPairsError, describe_route_tables::DescribeRouteTablesError,
     describe_security_groups::DescribeSecurityGroupsError, describe_subnets::DescribeSubnetsError,
-    describe_vpcs::DescribeVpcsError, import_key_pair::ImportKeyPairError,
-    modify_subnet_attribute::ModifySubnetAttributeError, run_instances::RunInstancesError,
-    terminate_instances::TerminateInstancesError,
+    describe_vpcs::DescribeVpcsError, detach_internet_gateway::DetachInternetGatewayError,
+    import_key_pair::ImportKeyPairError, modify_subnet_attribute::ModifySubnetAttributeError,
+    run_instances::RunInstancesError, terminate_instances::TerminateInstancesError,
 };
 
 #[derive(Debug)]
@@ -35,13 +37,19 @@ pub enum Ec2Error {
     CreateSecurityGroup(SdkError<CreateSecurityGroupError>),
     DeleteSecurityGroup(SdkError<DeleteSecurityGroupError>),
     DescribeSecurityGroups(SdkError<DescribeSecurityGroupsError>),
+    AuthorizeSecurityGroupIngress(SdkError<AuthorizeSecurityGroupIngressError>),
+    AuthorizeSecurityGroupEgress(SdkError<AuthorizeSecurityGroupEgressError>),
 
     // Internet Gateway
     CreateInternetGateway(SdkError<CreateInternetGatewayError>),
     DeleteInternetGateway(SdkError<DeleteInternetGatewayError>),
     DescribeInternetGateways(SdkError<DescribeInternetGatewaysError>),
-    AuthorizeSecurityGroupIngress(SdkError<AuthorizeSecurityGroupIngressError>),
-    AuthorizeSecurityGroupEgress(SdkError<AuthorizeSecurityGroupEgressError>),
+
+    // Connections
+    AttachInternetGateway(SdkError<AttachInternetGatewayError>),
+    DetachInternetGateway(SdkError<DetachInternetGatewayError>),
+    DescribeRouteTables(SdkError<DescribeRouteTablesError>),
+    CreateRoute(SdkError<CreateRouteError>),
 
     // SSH Key
     ImportSSHKey(SdkError<ImportKeyPairError>),
@@ -104,6 +112,20 @@ impl fmt::Display for Ec2Error {
             }
             Ec2Error::DescribeInternetGateways(err) => {
                 write!(f, "Failed to describe security groups: {}", err)
+            }
+
+            // Connections
+            Ec2Error::AttachInternetGateway(err) => {
+                write!(f, "Failed to attach internet gateway: {}", err)
+            }
+            Ec2Error::DetachInternetGateway(err) => {
+                write!(f, "Failed to detach internet gateway: {}", err)
+            }
+            Ec2Error::DescribeRouteTables(err) => {
+                write!(f, "Failed to describe route tables: {}", err)
+            }
+            Ec2Error::CreateRoute(err) => {
+                write!(f, "Failed to create route: {}", err)
             }
 
             // SSH Key
@@ -229,6 +251,32 @@ impl From<SdkError<AuthorizeSecurityGroupIngressError>> for Ec2Error {
 impl From<SdkError<AuthorizeSecurityGroupEgressError>> for Ec2Error {
     fn from(err: SdkError<AuthorizeSecurityGroupEgressError>) -> Self {
         Ec2Error::AuthorizeSecurityGroupEgress(err)
+    }
+}
+
+// Connections
+
+impl From<SdkError<AttachInternetGatewayError>> for Ec2Error {
+    fn from(err: SdkError<AttachInternetGatewayError>) -> Self {
+        Ec2Error::AttachInternetGateway(err)
+    }
+}
+
+impl From<SdkError<DetachInternetGatewayError>> for Ec2Error {
+    fn from(err: SdkError<DetachInternetGatewayError>) -> Self {
+        Ec2Error::DetachInternetGateway(err)
+    }
+}
+
+impl From<SdkError<DescribeRouteTablesError>> for Ec2Error {
+    fn from(err: SdkError<DescribeRouteTablesError>) -> Self {
+        Ec2Error::DescribeRouteTables(err)
+    }
+}
+
+impl From<SdkError<CreateRouteError>> for Ec2Error {
+    fn from(err: SdkError<CreateRouteError>) -> Self {
+        Ec2Error::CreateRoute(err)
     }
 }
 
