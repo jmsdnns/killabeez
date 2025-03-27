@@ -5,8 +5,8 @@ use async_ssh2_tokio::{
 use futures::{StreamExt, stream};
 
 use crate::aws::ec2::Bee;
+use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
-use crate::scenarios::Swarm;
 
 pub struct SSHConnection {
     client: Client,

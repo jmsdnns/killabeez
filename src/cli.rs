@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
+use crate::aws::scenarios::{AWSNetwork, Swarm};
 use crate::aws::{ec2, tagged};
 use crate::config::SwarmConfig;
-use crate::scenarios::{AWSNetwork, Swarm};
 use crate::ssh::SSHPool;
 
 const ABOUT_CLI: &str = "killabeez: a CLI for creating traffic jams of arbitrary scale";

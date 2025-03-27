@@ -3,7 +3,6 @@
 mod aws;
 mod cli;
 mod config;
-mod scenarios;
 mod ssh;
 
 #[tokio::main]

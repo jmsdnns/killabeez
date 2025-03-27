@@ -17,8 +17,8 @@ use aws_sdk_ec2::types::builders::{
 use clap::builder::OsStr;
 
 use crate::aws::errors::Ec2Error;
+use crate::aws::scenarios::AWSNetwork;
 use crate::config::SwarmConfig;
-use crate::scenarios::AWSNetwork;
 
 // hard coded for now
 const CIDR_VPC: &str = "10.0.0.0/16";
