@@ -6,7 +6,7 @@ use crate::aws::ec2::{
     Bee, BeeMatcher, Instances, InternetGateway, ResourceMatcher, SSHKey, SSHKeyMatcher,
     SecurityGroup, Subnet, Vpc,
 };
-use crate::aws::{self, ec2};
+use crate::aws::{self, ec2, errors::Ec2Error};
 use crate::config::SwarmConfig;
 
 #[derive(Debug, Clone)]
@@ -58,14 +58,13 @@ impl AWSNetwork {
         })
     }
 
-    async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        match AWSNetwork::load_vpc(client, sc).await {
-            Ok(Some(vpc_id)) => Ok(vpc_id),
-            Ok(None) => match Vpc::create(client, sc).await {
+    async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Ec2Error> {
+        match AWSNetwork::load_vpc(client, sc).await? {
+            Some(vpc_id) => Ok(vpc_id),
+            None => match Vpc::create(client, sc).await {
                 Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
-                Err(e) => unimplemented!(),
+                Err(e) => Err(e),
             },
-            Err(e) => unimplemented!(),
         }
     }
 
@@ -143,36 +142,26 @@ impl AWSNetwork {
         })
     }
 
-    async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
+    async fn load_vpc(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Ec2Error> {
         println!("[load_vpc]");
 
-        let existing_vpc_id = match sc.vpc_id.clone() {
-            Some(sc_vpc_id) => {
-                let m = ResourceMatcher::Id(vec![sc_vpc_id.clone()]);
-                match Vpc::describe(client, m).await {
-                    Ok(vpcs) => match vpcs.len() {
-                        0 => None,
-                        _ => Some(sc_vpc_id),
-                    },
-                    Err(e) => unimplemented!(),
-                }
-            }
-            None => None,
-        };
-
-        match existing_vpc_id {
+        match sc.vpc_id.clone() {
             None => {
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match Vpc::describe(client, m).await {
-                    Ok(vpcs) => match vpcs.len() {
-                        0 => Ok(None),
-                        1 => Ok(Some(vpcs.first().unwrap().vpc_id.clone().unwrap())),
-                        _ => unimplemented!(),
-                    },
-                    Err(e) => unimplemented!(),
+                let vpcs = Vpc::describe(client, m).await?;
+                match vpcs.len() {
+                    0 => Ok(None),
+                    _ => Ok(vpcs.first().unwrap().vpc_id.clone()),
                 }
             }
-            Some(vpc_id) => Ok(Some(vpc_id.clone())),
+            Some(vpc_id) => {
+                let m = ResourceMatcher::Id(vec![vpc_id]);
+                let vpcs = Vpc::describe(client, m).await?;
+                match vpcs.len() {
+                    0 => Ok(None),
+                    _ => Ok(vpcs.first().unwrap().vpc_id.clone()),
+                }
+            }
         }
     }
 
@@ -180,36 +169,26 @@ impl AWSNetwork {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<Option<String>, Error> {
+    ) -> Result<Option<String>, Ec2Error> {
         println!("[load_subnet]");
 
-        let existing_subnet_id = match sc.subnet_id.clone() {
-            Some(sc_subnet_id) => {
-                let m = ResourceMatcher::Id(vec![sc_subnet_id.clone()]);
-                match Subnet::describe(client, m).await {
-                    Ok(subnets) => match subnets.len() {
-                        0 => None,
-                        _ => Some(sc_subnet_id),
-                    },
-                    Err(e) => unimplemented!(),
-                }
-            }
-            None => None,
-        };
-
-        match existing_subnet_id {
+        match sc.subnet_id.clone() {
             None => {
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match Subnet::describe(client, m).await {
-                    Ok(subnets) => match subnets.len() {
-                        0 => Ok(None),
-                        1 => Ok(Some(subnets.first().unwrap().subnet_id.clone().unwrap())),
-                        _ => unimplemented!(),
-                    },
-                    Err(e) => unimplemented!(),
+                let subnets = Subnet::describe(client, m).await?;
+                match subnets.len() {
+                    0 => Ok(None),
+                    _ => Ok(subnets.first().unwrap().subnet_id.clone()),
                 }
             }
-            Some(subnet_id) => Ok(Some(subnet_id.clone())),
+            Some(subnet_id) => {
+                let m = ResourceMatcher::Id(vec![subnet_id.clone()]);
+                let subnets = Subnet::describe(client, m).await?;
+                match subnets.len() {
+                    0 => Ok(None),
+                    _ => Ok(subnets.first().unwrap().subnet_id.clone()),
+                }
+            }
         }
     }
 
@@ -218,39 +197,26 @@ impl AWSNetwork {
         sc: &SwarmConfig,
         vpc_id: &str,
         subnet_id: &str,
-    ) -> Result<Option<String>, Error> {
+    ) -> Result<Option<String>, Ec2Error> {
         println!("[load_security_group]");
 
-        let existing_sg_id = match sc.security_group_id.clone() {
-            Some(sc_security_group_id) => {
-                let m = ResourceMatcher::Id(vec![sc_security_group_id.clone()]);
-                match SecurityGroup::describe(client, m).await {
-                    Ok(sgs) => match sgs.len() {
-                        0 => None,
-                        _ => Some(sc_security_group_id),
-                    },
-                    Err(e) => unimplemented!(),
-                }
-            }
-            None => None,
-        };
-
-        match existing_sg_id {
+        match sc.security_group_id.clone() {
             None => {
-                // try loading tag name
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match SecurityGroup::describe(client, m).await {
-                    Ok(security_groups) => match security_groups.len() {
-                        0 => Ok(None),
-                        1 => Ok(Some(
-                            security_groups.first().unwrap().group_id.clone().unwrap(),
-                        )),
-                        _ => unimplemented!(),
-                    },
-                    Err(e) => unimplemented!(),
+                let sgs = SecurityGroup::describe(client, m).await?;
+                match sgs.len() {
+                    0 => Ok(None),
+                    _ => Ok(sgs.first().unwrap().group_id.clone()),
                 }
             }
-            Some(sg_id) => Ok(Some(sg_id.clone())),
+            Some(sc_sg_id) => {
+                let m = ResourceMatcher::Id(vec![sc_sg_id.clone()]);
+                let sgs = SecurityGroup::describe(client, m).await?;
+                match sgs.len() {
+                    0 => Ok(None),
+                    _ => Ok(sgs.first().unwrap().group_id.clone()),
+                }
+            }
         }
     }
 
@@ -258,19 +224,14 @@ impl AWSNetwork {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<Option<String>, Error> {
+    ) -> Result<Option<String>, Ec2Error> {
         println!("[load_internet_gateway]");
 
         let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-        match InternetGateway::describe(client, m).await {
-            Ok(igws) => match igws.len() {
-                0 => Ok(None),
-                1 => Ok(Some(
-                    igws.first().unwrap().internet_gateway_id.clone().unwrap(),
-                )),
-                _ => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
+        let igs = InternetGateway::describe(client, m).await?;
+        match igs.len() {
+            0 => Ok(None),
+            _ => Ok(igs.first().unwrap().internet_gateway_id.clone()),
         }
     }
 
@@ -299,62 +260,48 @@ impl AWSNetwork {
         typed_ok
     }
 
-    async fn drop_security_group(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_security_group(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_security_group]");
         // let typed_ok: Result<(), Error> = Ok(());
 
         match &sc.security_group_id {
-            // ID found in config
             Some(sg_id) => Ok(()),
-            // No ID in config, try deleting by tag
             None => {
                 println!("[drop_security_group] fallback to tag");
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match SecurityGroup::delete(client, m.clone()).await {
-                    Ok(()) => Ok(()),
-                    Err(e) => unimplemented!(),
-                }
+                SecurityGroup::delete(client, m.clone()).await
             }
         }
     }
 
-    async fn drop_subnet(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_subnet(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_subnet]");
         match &sc.subnet_id {
             Some(subnet_id) => Ok(()),
             None => {
                 println!("[drop_subnet] fallback to tag");
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match Subnet::delete(client, m.clone()).await {
-                    Ok(()) => Ok(()),
-                    Err(e) => unimplemented!(),
-                }
+                Subnet::delete(client, m.clone()).await
             }
         }
     }
 
-    async fn drop_vpc(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_vpc(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_vpc]");
         match &sc.vpc_id {
             Some(vpc_id) => Ok(()),
             None => {
                 println!("[drop_vpc] fallback to tag");
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match Vpc::delete(client, m.clone()).await {
-                    Ok(()) => Ok(()),
-                    Err(e) => unimplemented!(),
-                }
+                Vpc::delete(client, m.clone()).await
             }
         }
     }
 
-    async fn drop_internet_getway(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_internet_getway(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_internet_gateway]");
         let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-        match InternetGateway::delete(client, m.clone()).await {
-            Ok(()) => Ok(()),
-            Err(e) => unimplemented!(),
-        }
+        InternetGateway::delete(client, m.clone()).await
     }
 }
 
