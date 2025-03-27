@@ -65,8 +65,8 @@ pub enum ResourceMatcher {
 
 // VPCs
 
-pub struct VPC {}
-impl VPC {
+pub struct Vpc {}
+impl Vpc {
     pub async fn create(client: &Client, sc: &SwarmConfig) -> Result<types::Vpc, Ec2Error> {
         let tag_specifications = create_tag_spec(sc, types::ResourceType::Vpc);
         println!("[VPC.create]");
@@ -117,7 +117,7 @@ impl VPC {
         match matcher {
             ResourceMatcher::Id(vpc_ids) => terminate_ids(client, vpc_ids.clone()).await,
             m @ ResourceMatcher::Tagged(_) => {
-                let vpc_ids = VPC::describe(client, m.clone())
+                let vpc_ids = Vpc::describe(client, m.clone())
                     .await?
                     .iter()
                     .filter_map(|b| b.vpc_id.clone())

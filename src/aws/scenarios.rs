@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::aws::ec2::{
     Bee, BeeMatcher, Instances, InternetGateway, ResourceMatcher, SSHKey, SSHKeyMatcher,
-    SecurityGroup, Subnet, VPC,
+    SecurityGroup, Subnet, Vpc,
 };
 use crate::aws::{self, ec2};
 use crate::config::SwarmConfig;
@@ -61,7 +61,7 @@ impl AWSNetwork {
     async fn init_vpc(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
         match AWSNetwork::load_vpc(client, sc).await {
             Ok(Some(vpc_id)) => Ok(vpc_id),
-            Ok(None) => match VPC::create(client, sc).await {
+            Ok(None) => match Vpc::create(client, sc).await {
                 Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
                 Err(e) => unimplemented!(),
             },
@@ -149,7 +149,7 @@ impl AWSNetwork {
         let existing_vpc_id = match sc.vpc_id.clone() {
             Some(sc_vpc_id) => {
                 let m = ResourceMatcher::Id(vec![sc_vpc_id.clone()]);
-                match VPC::describe(client, m).await {
+                match Vpc::describe(client, m).await {
                     Ok(vpcs) => match vpcs.len() {
                         0 => None,
                         _ => Some(sc_vpc_id),
@@ -163,7 +163,7 @@ impl AWSNetwork {
         match existing_vpc_id {
             None => {
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match VPC::describe(client, m).await {
+                match Vpc::describe(client, m).await {
                     Ok(vpcs) => match vpcs.len() {
                         0 => Ok(None),
                         1 => Ok(Some(vpcs.first().unwrap().vpc_id.clone().unwrap())),
@@ -340,7 +340,7 @@ impl AWSNetwork {
             None => {
                 println!("[drop_vpc] fallback to tag");
                 let m = ResourceMatcher::Tagged(sc.tag_name.clone());
-                match VPC::delete(client, m.clone()).await {
+                match Vpc::delete(client, m.clone()).await {
                     Ok(()) => Ok(()),
                     Err(e) => unimplemented!(),
                 }
