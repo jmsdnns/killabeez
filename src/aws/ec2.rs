@@ -170,68 +170,49 @@ impl Subnet {
     pub async fn describe(
         client: &Client,
         matcher: ResourceMatcher,
-    ) -> Result<Vec<types::Subnet>, Error> {
-        let r = client.describe_subnets();
-        let request = match matcher {
+    ) -> Result<Vec<types::Subnet>, Ec2Error> {
+        match matcher {
             ResourceMatcher::Id(subnet_ids) => match subnet_ids.len() {
-                0 => None,
-                _ => Some(r.set_subnet_ids(Some(subnet_ids.clone())).send()),
+                0 => Ok(Vec::new()),
+                _ => Ok(client
+                    .describe_subnets()
+                    .set_subnet_ids(Some(subnet_ids.clone()))
+                    .send()
+                    .await?
+                    .subnets
+                    .unwrap()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
-        };
-
-        match request {
-            None => Ok(Vec::new()),
-            Some(request) => match request.await {
-                Ok(response) => match response.subnets {
-                    Some(subnets) => match subnets.len() {
-                        0 => Ok(Vec::new()),
-                        _ => Ok(subnets.clone()),
-                    },
-                    None => unimplemented!(),
-                },
-                Err(e) => panic!("[Subnet.describe] ERROR\n{}", e),
-            },
+            ResourceMatcher::Tagged(tag) => Ok(client
+                .describe_subnets()
+                .filters(create_tag_filter(&tag.clone()))
+                .send()
+                .await?
+                .subnets
+                .unwrap()),
         }
     }
 
-    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
-        async fn terminate_ids(client: &Client, subnet_ids: Vec<String>) -> Result<(), Error> {
-            match subnet_ids.len() {
-                0 => Ok(()),
-                _ => {
-                    let r = client.delete_subnet();
-                    match subnet_ids.first() {
-                        Some(subnet_id) => {
-                            match r.set_subnet_id(Some(subnet_id.clone())).send().await {
-                                Ok(_) => Ok(()),
-                                Err(e) => unimplemented!(),
-                            }
-                        }
-                        None => Ok(()),
-                    }
-                }
-            }
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Ec2Error> {
+        async fn terminate_ids(client: &Client, subnet_ids: Vec<String>) -> Result<(), Ec2Error> {
+            let subnet_id = subnet_ids.first().unwrap().to_owned();
+            client
+                .delete_subnet()
+                .set_subnet_id(Some(subnet_id))
+                .send()
+                .await?;
+            Ok(())
         }
 
         match matcher {
-            ResourceMatcher::Id(subnet_ids) => match subnet_ids.len() {
-                0 => Ok(()),
-                _ => terminate_ids(client, subnet_ids.clone()).await,
-            },
-            m @ ResourceMatcher::Tagged(_) => match Subnet::describe(client, m.clone()).await {
-                Ok(subnets) => {
-                    let subnet_ids = subnets
-                        .iter()
-                        .filter_map(|b| b.subnet_id.clone())
-                        .collect::<Vec<String>>();
-                    match subnet_ids.len() {
-                        0 => Ok(()),
-                        _ => terminate_ids(client, subnet_ids).await,
-                    }
-                }
-                Err(e) => unimplemented!(),
-            },
+            ResourceMatcher::Id(subnet_ids) => terminate_ids(client, subnet_ids.clone()).await,
+            m @ ResourceMatcher::Tagged(_) => {
+                let subnet_ids = Subnet::describe(client, m.clone())
+                    .await?
+                    .iter()
+                    .filter_map(|b| b.subnet_id.clone())
+                    .collect::<Vec<String>>();
+                terminate_ids(client, subnet_ids).await
+            }
         }
     }
 }
@@ -306,67 +287,49 @@ impl SecurityGroup {
     pub async fn describe(
         client: &Client,
         matcher: ResourceMatcher,
-    ) -> Result<Vec<types::SecurityGroup>, Error> {
+    ) -> Result<Vec<types::SecurityGroup>, Ec2Error> {
         let r = client.describe_security_groups();
-        let request = match matcher {
+        match matcher {
             ResourceMatcher::Id(sg_ids) => match sg_ids.len() {
-                0 => None,
-                _ => Some(r.set_group_ids(Some(sg_ids.clone())).send()),
+                0 => Ok(Vec::new()),
+                _ => Ok(client
+                    .describe_security_groups()
+                    .set_group_ids(Some(sg_ids.clone()))
+                    .send()
+                    .await?
+                    .security_groups
+                    .unwrap()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
-        };
-
-        match request {
-            None => Ok(Vec::new()),
-            Some(request) => match request.await {
-                Ok(response) => match response.security_groups {
-                    Some(sgs) => match sgs.len() {
-                        0 => Ok(Vec::new()),
-                        _ => Ok(sgs.clone()),
-                    },
-                    None => unimplemented!(),
-                },
-                Err(e) => panic!("[VPC.describe] ERROR\n{}", e),
-            },
+            ResourceMatcher::Tagged(tag) => Ok(client
+                .describe_security_groups()
+                .filters(create_tag_filter(&tag.clone()))
+                .send()
+                .await?
+                .security_groups
+                .unwrap()),
         }
     }
 
-    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Error> {
-        async fn terminate_ids(client: &Client, sg_ids: Vec<String>) -> Result<(), Error> {
-            match sg_ids.len() {
-                0 => Ok(()),
-                _ => {
-                    let r = client.delete_security_group();
-                    match sg_ids.first() {
-                        Some(sg_id) => match r.set_group_id(Some(sg_id.clone())).send().await {
-                            Ok(_) => Ok(()),
-                            Err(e) => unimplemented!(),
-                        },
-                        None => Ok(()),
-                    }
-                }
-            }
+    pub async fn delete(client: &Client, matcher: ResourceMatcher) -> Result<(), Ec2Error> {
+        async fn terminate_ids(client: &Client, sg_ids: Vec<String>) -> Result<(), Ec2Error> {
+            let sg_id = sg_ids.first().unwrap().to_owned();
+            client
+                .delete_security_group()
+                .set_group_id(Some(sg_id))
+                .send()
+                .await?;
+            Ok(())
         }
 
         match matcher {
-            ResourceMatcher::Id(sg_ids) => match sg_ids.len() {
-                0 => Ok(()),
-                _ => terminate_ids(client, sg_ids.clone()).await,
-            },
+            ResourceMatcher::Id(sg_ids) => terminate_ids(client, sg_ids.clone()).await,
             m @ ResourceMatcher::Tagged(_) => {
-                match SecurityGroup::describe(client, m.clone()).await {
-                    Ok(sgs) => {
-                        let sg_ids = sgs
-                            .iter()
-                            .filter_map(|b| b.group_id.clone())
-                            .collect::<Vec<String>>();
-                        match sg_ids.len() {
-                            0 => Ok(()),
-                            _ => terminate_ids(client, sg_ids).await,
-                        }
-                    }
-                    Err(e) => unimplemented!(),
-                }
+                let sg_ids = SecurityGroup::describe(client, m.clone())
+                    .await?
+                    .iter()
+                    .filter_map(|b| b.group_id.clone())
+                    .collect::<Vec<String>>();
+                terminate_ids(client, sg_ids).await
             }
         }
     }
@@ -402,28 +365,25 @@ impl InternetGateway {
     pub async fn describe(
         client: &Client,
         matcher: ResourceMatcher,
-    ) -> Result<Vec<types::InternetGateway>, Error> {
-        let r = client.describe_internet_gateways();
-        let request = match matcher {
+    ) -> Result<Vec<types::InternetGateway>, Ec2Error> {
+        match matcher {
             ResourceMatcher::Id(igw_ids) => match igw_ids.len() {
-                0 => None,
-                _ => Some(r.set_internet_gateway_ids(Some(igw_ids.clone())).send()),
+                0 => Ok(Vec::new()),
+                _ => Ok(client
+                    .describe_internet_gateways()
+                    .set_internet_gateway_ids(Some(igw_ids.clone()))
+                    .send()
+                    .await?
+                    .internet_gateways
+                    .unwrap()),
             },
-            ResourceMatcher::Tagged(tag) => Some(r.filters(create_tag_filter(&tag.clone())).send()),
-        };
-
-        match request {
-            None => Ok(Vec::new()),
-            Some(request) => match request.await {
-                Ok(response) => match response.internet_gateways {
-                    Some(igws) => match igws.len() {
-                        0 => Ok(Vec::new()),
-                        _ => Ok(igws.clone()),
-                    },
-                    None => Ok(Vec::new()),
-                },
-                Err(e) => panic!("[Gateway.describe] ERROR\n{}", e),
-            },
+            ResourceMatcher::Tagged(tag) => Ok(client
+                .describe_internet_gateways()
+                .filters(create_tag_filter(&tag.clone()))
+                .send()
+                .await?
+                .internet_gateways
+                .unwrap()),
         }
     }
 
