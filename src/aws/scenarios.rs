@@ -30,8 +30,8 @@ impl fmt::Display for AWSNetwork {
 }
 
 impl AWSNetwork {
-    pub async fn init_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
-        println!("[load_network]");
+    pub async fn init(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
+        println!("[init_network]");
 
         let vpc_id = AWSNetwork::init_vpc(client, sc).await?;
         let subnet_id = AWSNetwork::init_subnet(client, sc, &vpc_id).await?;
@@ -99,7 +99,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn load_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
+    pub async fn load(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
         println!("[load_network]");
 
         let vpc_id = AWSNetwork::load_vpc(client, sc).await?.unwrap();
@@ -211,7 +211,7 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn drop_network(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
+    pub async fn drop(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_network]");
 
         AWSNetwork::drop_internet_getway(client, sc).await?;
@@ -293,12 +293,12 @@ impl fmt::Display for Swarm {
 }
 
 impl Swarm {
-    pub async fn init_swarm(
+    pub async fn init(
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
     ) -> Result<Self, Ec2Error> {
-        println!("[load_swarm]");
+        println!("[init_swarm]");
 
         let key_pair = Swarm::init_key_pair(client, sc).await?;
         let instances = Swarm::run_instances(client, sc, network).await?;
@@ -318,7 +318,7 @@ impl Swarm {
         }
     }
 
-    pub async fn load_swarm(
+    pub async fn load(
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
@@ -405,7 +405,7 @@ impl Swarm {
         Ok(ids.to_owned())
     }
 
-    pub async fn drop_swarm(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
+    pub async fn drop(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_swarm]");
 
         Swarm::drop_instances(client, sc).await?;
