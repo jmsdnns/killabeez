@@ -24,8 +24,6 @@ impl SSHConnection {
 
         let conn = Client::connect(dst, username, auth.clone(), ServerCheckMethod::NoCheck).await;
 
-        //println!("CONN: {:?}", conn);
-
         SSHConnection {
             client: conn.unwrap(),
             host: String::from(host),
@@ -57,18 +55,14 @@ impl SSHPool {
     }
 
     pub async fn exec(&self, cmd: &str) -> Vec<CommandExecutedResult> {
-        let results = stream::iter(self.conns.iter())
+        stream::iter(self.conns.iter())
             .map(|c| c.client.execute(cmd))
             .buffer_unordered(10)
             .collect::<Vec<Result<CommandExecutedResult, Error>>>()
-            .await;
-
-        let mut output = Vec::new();
-        for r in results.iter() {
-            output.push(r.as_ref().unwrap().clone());
-        }
-
-        output
+            .await
+            .iter()
+            .map(|o| o.as_ref().unwrap().to_owned())
+            .collect::<Vec<CommandExecutedResult>>()
     }
 }
 
