@@ -366,9 +366,11 @@ impl Swarm {
     ) -> Result<Vec<Bee>, Ec2Error> {
         println!("[run_instances]");
 
+        let target_state = InstanceStateName::Running;
+
         // load id and ip for all tagged instances
         let m = BeeMatcher::Tagged(sc.tag_name.clone());
-        let instances = Instances::describe(client, m, InstanceStateName::Running).await?;
+        let instances = Instances::describe(client, m, target_state.clone()).await?;
         println!("[run_instances] existing {}", instances.len());
 
         // create or terminate instances so count match appconfig
@@ -401,7 +403,7 @@ impl Swarm {
         };
 
         // wait for all to be fully initialized
-        let ids = Instances::wait(client, loaded_beez.unwrap(), InstanceStateName::Running).await?;
+        let ids = Instances::wait(client, loaded_beez.unwrap(), target_state).await?;
         Ok(ids.to_owned())
     }
 
