@@ -30,31 +30,19 @@ impl fmt::Display for AWSNetwork {
 }
 
 impl AWSNetwork {
-    pub async fn init_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Error> {
+    pub async fn init_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
         println!("[load_network]");
 
-        let vpc_id = match AWSNetwork::init_vpc(client, sc).await {
-            Ok(vpc_id) => vpc_id,
-            Err(e) => unimplemented!(),
-        };
-        let subnet_id = match AWSNetwork::init_subnet(client, sc, &vpc_id).await {
-            Ok(subnet_id) => subnet_id,
-            Err(e) => unimplemented!(),
-        };
+        let vpc_id = AWSNetwork::init_vpc(client, sc).await?;
+        let subnet_id = AWSNetwork::init_subnet(client, sc, &vpc_id).await?;
         let security_group_id =
-            match AWSNetwork::init_security_group(client, sc, &vpc_id, &subnet_id).await {
-                Ok(sg_id) => sg_id,
-                Err(e) => unimplemented!(),
-            };
-        match AWSNetwork::init_internet_gateway(client, sc, &vpc_id).await {
-            Ok(_) => println!("created igw"),
-            Err(e) => unimplemented!(),
-        };
+            AWSNetwork::init_security_group(client, sc, &vpc_id, &subnet_id).await?;
+        let igw = AWSNetwork::init_internet_gateway(client, sc, &vpc_id).await?;
 
         Ok(AWSNetwork {
-            vpc_id: vpc_id.clone(),
-            subnet_id: subnet_id.clone(),
-            security_group_id: security_group_id.clone(),
+            vpc_id: vpc_id.to_owned(),
+            subnet_id: subnet_id.to_owned(),
+            security_group_id: security_group_id.to_owned(),
         })
     }
 
@@ -62,20 +50,23 @@ impl AWSNetwork {
         match AWSNetwork::load_vpc(client, sc).await? {
             Some(vpc_id) => Ok(vpc_id),
             None => match Vpc::create(client, sc).await {
-                Ok(vpc) => Ok(vpc.vpc_id.unwrap().clone()),
+                Ok(vpc) => Ok(vpc.vpc_id.unwrap().to_owned()),
                 Err(e) => Err(e),
             },
         }
     }
 
-    async fn init_subnet(client: &Client, sc: &SwarmConfig, vpc_id: &str) -> Result<String, Error> {
-        match AWSNetwork::load_subnet(client, sc, vpc_id).await {
-            Ok(Some(subnet_id)) => Ok(subnet_id),
-            Ok(None) => match Subnet::create(client, sc, vpc_id).await {
-                Ok(subnet) => Ok(subnet.subnet_id.unwrap().clone()),
-                Err(e) => unimplemented!(),
+    async fn init_subnet(
+        client: &Client,
+        sc: &SwarmConfig,
+        vpc_id: &str,
+    ) -> Result<String, Ec2Error> {
+        match AWSNetwork::load_subnet(client, sc, vpc_id).await? {
+            Some(subnet_id) => Ok(subnet_id),
+            None => match Subnet::create(client, sc, vpc_id).await {
+                Ok(subnet) => Ok(subnet.subnet_id.unwrap().to_owned()),
+                Err(e) => Err(e),
             },
-            Err(e) => unimplemented!(),
         }
     }
 
@@ -84,14 +75,13 @@ impl AWSNetwork {
         sc: &SwarmConfig,
         vpc_id: &str,
         subnet_id: &str,
-    ) -> Result<String, Error> {
-        match AWSNetwork::load_security_group(client, sc, vpc_id, subnet_id).await {
-            Ok(Some(sg_id)) => Ok(sg_id),
-            Ok(None) => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
-                Ok(sg_id) => Ok(sg_id.clone()),
-                Err(e) => panic!("[init_security_group] {}", e),
+    ) -> Result<String, Ec2Error> {
+        match AWSNetwork::load_security_group(client, sc, vpc_id, subnet_id).await? {
+            Some(sg_id) => Ok(sg_id),
+            None => match SecurityGroup::create(client, sc, vpc_id, subnet_id).await {
+                Ok(sg_id) => Ok(sg_id.to_owned()),
+                Err(e) => Err(e),
             },
-            Err(e) => unimplemented!(),
         }
     }
 
@@ -99,46 +89,32 @@ impl AWSNetwork {
         client: &Client,
         sc: &SwarmConfig,
         vpc_id: &str,
-    ) -> Result<String, Error> {
-        match AWSNetwork::load_internet_gateway(client, sc, vpc_id).await {
-            Ok(Some(igw_id)) => Ok(igw_id),
-            Ok(None) => match InternetGateway::create(client, sc, vpc_id).await {
-                Ok(igw) => Ok(igw.internet_gateway_id.unwrap().clone()),
-                Err(e) => unimplemented!(),
+    ) -> Result<String, Ec2Error> {
+        match AWSNetwork::load_internet_gateway(client, sc, vpc_id).await? {
+            Some(igw_id) => Ok(igw_id),
+            None => match InternetGateway::create(client, sc, vpc_id).await {
+                Ok(igw) => Ok(igw.internet_gateway_id.unwrap().to_owned()),
+                Err(e) => Err(e),
             },
-            Err(e) => unimplemented!(),
         }
     }
 
-    pub async fn load_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Error> {
+    pub async fn load_network(client: &Client, sc: &SwarmConfig) -> Result<Self, Ec2Error> {
         println!("[load_network]");
 
-        let vpc_id = match AWSNetwork::load_vpc(client, sc).await {
-            Ok(Some(vpc_id)) => vpc_id,
-            Ok(None) => unimplemented!(),
-            Err(e) => unimplemented!(),
-        };
-        let subnet_id = match AWSNetwork::load_subnet(client, sc, &vpc_id).await {
-            Ok(Some(subnet_id)) => subnet_id,
-            Ok(None) => unimplemented!(),
-            Err(e) => unimplemented!(),
-        };
-        let security_group_id =
-            match AWSNetwork::load_security_group(client, sc, &vpc_id, &subnet_id).await {
-                Ok(Some(sg_id)) => sg_id,
-                Ok(None) => unimplemented!(),
-                Err(e) => unimplemented!(),
-            };
-        match AWSNetwork::load_internet_gateway(client, sc, &vpc_id).await {
-            Ok(Some(igw_id)) => println!("loaded igw"),
-            Ok(None) => unimplemented!(),
-            Err(e) => unimplemented!(),
-        };
+        let vpc_id = AWSNetwork::load_vpc(client, sc).await?.unwrap();
+        let subnet_id = AWSNetwork::load_subnet(client, sc, &vpc_id).await?.unwrap();
+        let security_group_id = AWSNetwork::load_security_group(client, sc, &vpc_id, &subnet_id)
+            .await?
+            .unwrap();
+        let igw = AWSNetwork::load_internet_gateway(client, sc, &vpc_id)
+            .await?
+            .unwrap();
 
         Ok(AWSNetwork {
-            vpc_id: vpc_id.clone(),
-            subnet_id: subnet_id.clone(),
-            security_group_id: security_group_id.clone(),
+            vpc_id: vpc_id.to_owned(),
+            subnet_id: subnet_id.to_owned(),
+            security_group_id: security_group_id.to_owned(),
         })
     }
 
@@ -235,34 +211,18 @@ impl AWSNetwork {
         }
     }
 
-    pub async fn drop_network(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    pub async fn drop_network(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_network]");
 
-        let typed_ok: Result<(), Error> = Ok(());
-
-        match AWSNetwork::drop_internet_getway(client, sc).await {
-            Ok(()) => (),
-            Err(e) => unimplemented!(),
-        };
-        match AWSNetwork::drop_security_group(client, sc).await {
-            Ok(()) => &typed_ok,
-            Err(e) => unimplemented!(),
-        };
-        match AWSNetwork::drop_subnet(client, sc).await {
-            Ok(()) => &typed_ok,
-            Err(e) => unimplemented!(),
-        };
-        match AWSNetwork::drop_vpc(client, sc).await {
-            Ok(()) => &typed_ok,
-            Err(e) => unimplemented!(),
-        };
-
-        typed_ok
+        AWSNetwork::drop_internet_getway(client, sc).await?;
+        AWSNetwork::drop_security_group(client, sc).await?;
+        AWSNetwork::drop_subnet(client, sc).await?;
+        AWSNetwork::drop_vpc(client, sc).await?;
+        Ok(())
     }
 
     async fn drop_security_group(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_security_group]");
-        // let typed_ok: Result<(), Error> = Ok(());
 
         match &sc.security_group_id {
             Some(sg_id) => Ok(()),
@@ -337,37 +297,24 @@ impl Swarm {
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Ec2Error> {
         println!("[load_swarm]");
 
-        let key_pair = match Swarm::init_key_pair(client, sc).await {
-            Ok(key_id) => key_id,
-            Err(e) => unimplemented!(),
-        };
-        let instances = match Swarm::run_instances(client, sc, network).await {
-            Ok(instances) => instances.clone(),
-            Err(e) => unimplemented!(),
-        };
+        let key_pair = Swarm::init_key_pair(client, sc).await?;
+        let instances = Swarm::run_instances(client, sc, network).await?;
 
         Ok(Swarm {
-            config: sc.clone(),
-            network: network.clone(),
-            key_pair: key_pair.clone(),
-            instances: instances.clone(),
+            config: sc.to_owned(),
+            network: network.to_owned(),
+            key_pair: key_pair.to_owned(),
+            instances: instances.to_owned(),
         })
     }
 
-    async fn init_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Error> {
-        match Swarm::load_key_pair(client, sc).await {
-            Ok(Some(key_id)) => Ok(key_id),
-            Ok(None) => match sc.public_key_file.clone() {
-                Some(key) => match SSHKey::import(client, sc).await {
-                    Ok(key_id) => Ok(key_id),
-                    Err(e) => unimplemented!(),
-                },
-                None => unimplemented!(),
-            },
-            Err(e) => unimplemented!(),
+    async fn init_key_pair(client: &Client, sc: &SwarmConfig) -> Result<String, Ec2Error> {
+        match Swarm::load_key_pair(client, sc).await? {
+            Some(key_id) => Ok(key_id),
+            None => SSHKey::import(client, sc).await,
         }
     }
 
@@ -375,60 +322,40 @@ impl Swarm {
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Ec2Error> {
         println!("[load_swarm]");
 
-        let key_pair = match Swarm::load_key_pair(client, sc).await {
-            Ok(Some(key_id)) => key_id,
-            Ok(None) => unimplemented!(),
-            Err(e) => unimplemented!(),
-        };
-        let instances = match Swarm::run_instances(client, sc, network).await {
-            Ok(instances) => instances.clone(),
-            Err(e) => unimplemented!(),
-        };
+        let key_pair = Swarm::load_key_pair(client, sc).await?.unwrap();
+        let instances = Swarm::run_instances(client, sc, network).await?;
 
         Ok(Swarm {
-            config: sc.clone(),
-            network: network.clone(),
-            key_pair: key_pair.clone(),
-            instances: instances.clone(),
+            config: sc.to_owned(),
+            network: network.to_owned(),
+            key_pair: key_pair.to_owned(),
+            instances: instances.to_owned(),
         })
     }
 
-    async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Error> {
+    async fn load_key_pair(client: &Client, sc: &SwarmConfig) -> Result<Option<String>, Ec2Error> {
         println!("[load_key_pair]");
 
-        // key id found in config, try to load key
-        let existing_key_id = match sc.key_id.clone() {
+        match sc.key_id.clone() {
+            None => {
+                let m = SSHKeyMatcher::Name(sc.tag_name.clone());
+                let keys = SSHKey::describe(client, m).await?;
+                match keys.len() {
+                    0 => Ok(None),
+                    _ => Ok(keys.first().unwrap().key_pair_id.clone()),
+                }
+            }
             Some(key_id) => {
                 let m = SSHKeyMatcher::Id(key_id.clone());
-                match SSHKey::describe(client, m).await {
-                    Ok(key_pairs) => match key_pairs.len() {
-                        0 => None,
-                        _ => Some(key_pairs.first().unwrap().key_pair_id.clone().unwrap()),
-                    },
-                    Err(e) => unimplemented!(),
+                let keys = SSHKey::describe(client, m).await?;
+                match keys.len() {
+                    0 => Ok(None),
+                    _ => Ok(keys.first().unwrap().key_pair_id.clone()),
                 }
             }
-            None => None,
-        };
-
-        // no key id found in config, try loading by name (tag_name)
-        match existing_key_id {
-            None => {
-                // try loading tag name
-                let m = SSHKeyMatcher::Name(sc.tag_name.clone());
-                match SSHKey::describe(client, m).await {
-                    Ok(key_infos) => match key_infos.len() {
-                        0 => Ok(None),
-                        1 => Ok(key_infos.first().unwrap().key_pair_id.clone()),
-                        _ => unimplemented!(),
-                    },
-                    Err(e) => unimplemented!(),
-                }
-            }
-            Some(key_id) => Ok(Some(key_id.clone())),
         }
     }
 
@@ -436,96 +363,74 @@ impl Swarm {
         client: &Client,
         sc: &SwarmConfig,
         network: &AWSNetwork,
-    ) -> Result<Vec<Bee>, Error> {
+    ) -> Result<Vec<Bee>, Ec2Error> {
         println!("[run_instances]");
 
         // load id and ip for all tagged instances
         let m = BeeMatcher::Tagged(sc.tag_name.clone());
-        let mut instances = match Instances::describe(client, m, InstanceStateName::Running).await {
-            Ok(instances) => instances.clone(),
-            Err(e) => panic!("This crashed for some reason: {}", e),
-        };
+        let instances = Instances::describe(client, m, InstanceStateName::Running).await?;
         println!("[run_instances] existing {}", instances.len());
 
         // create or terminate instances so count match appconfig
         let num_instances = instances.len() as i32;
-        let loaded_beez = match sc.num_beez {
+        let loaded_beez: Result<Vec<Bee>, Ec2Error> = match sc.num_beez {
             // start additional instances
             num_beez if num_beez > num_instances => {
                 let additional = num_beez - num_instances;
                 println!("[run_instances] adding instances {}", additional);
-                match Instances::create(client, sc, network, Some(additional)).await {
-                    Ok(new_beez) => [instances, new_beez].concat(),
-                    Err(e) => unimplemented!(),
-                }
+                let new_beez = Instances::create(client, sc, network, Some(additional)).await?;
+                Ok([instances, new_beez].concat())
             }
 
             // terminate excess instances
             num_beez if num_beez < num_instances => {
                 let excess = num_instances - num_beez;
-                let rip_instances = instances.drain(0..(excess as usize)).collect::<Vec<Bee>>();
-                match Instances::delete(client, sc, &BeeMatcher::Ids(rip_instances)).await {
-                    Ok(_) => instances,
-                    Err(e) => unimplemented!(),
-                }
+                let rip_instances = instances
+                    .clone()
+                    .drain(0..(excess as usize))
+                    .collect::<Vec<Bee>>();
+                Instances::delete(client, sc, &BeeMatcher::Ids(rip_instances.clone())).await?;
+                Ok(instances.to_owned())
             }
 
-            // correct number are ready
+            // correct number already running
             _ => {
                 println!("[run_instances] right number instances");
-                instances
+                Ok(instances.to_owned())
             }
         };
 
         // wait for all to be fully initialized
-        match Instances::wait(client, loaded_beez, InstanceStateName::Running).await {
-            Ok(instances) => Ok(instances.clone()),
-            Err(e) => unimplemented!(),
-        }
+        let ids = Instances::wait(client, loaded_beez.unwrap(), InstanceStateName::Running).await?;
+        Ok(ids.to_owned())
     }
 
-    pub async fn drop_swarm(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    pub async fn drop_swarm(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_swarm]");
 
-        let typed_ok: Result<(), Error> = Ok(());
-
-        match Swarm::drop_instances(client, sc).await {
-            Ok(()) => &typed_ok,
-            Err(e) => unimplemented!(),
-        };
-        match Swarm::drop_key_pair(client, sc).await {
-            Ok(()) => &typed_ok,
-            Err(e) => unimplemented!(),
-        };
-
-        typed_ok
+        Swarm::drop_instances(client, sc).await?;
+        Swarm::drop_key_pair(client, sc).await?;
+        Ok(())
     }
 
-    async fn drop_instances(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_instances(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_instances]");
         let m = BeeMatcher::Tagged(sc.tag_name.clone());
-        let beez = match Instances::delete(client, sc, &m.clone()).await {
-            Ok(beez) => beez,
-            Err(e) => unimplemented!(),
-        };
-        // wait for all to be fully initialized
-        match Instances::wait(client, beez.clone(), InstanceStateName::Terminated).await {
-            Ok(_) => Ok(()),
-            Err(e) => unimplemented!(),
-        }
+        let beez = Instances::delete(client, sc, &m.clone()).await?;
+
+        // wait for all to be fully terminated
+        Instances::wait(client, beez.clone(), InstanceStateName::Terminated).await?;
+        Ok(())
     }
 
-    async fn drop_key_pair(client: &Client, sc: &SwarmConfig) -> Result<(), Error> {
+    async fn drop_key_pair(client: &Client, sc: &SwarmConfig) -> Result<(), Ec2Error> {
         println!("[drop_key_pair]");
         match &sc.key_id.clone() {
             Some(key_id) => Ok(()),
             None => {
                 println!("[drop_key_pair] fallback to tag");
                 let m = SSHKeyMatcher::Name(sc.tag_name.clone());
-                match SSHKey::delete(client, m.clone()).await {
-                    Ok(()) => Ok(()),
-                    Err(e) => unimplemented!(),
-                }
+                SSHKey::delete(client, m.clone()).await
             }
         }
     }
