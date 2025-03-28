@@ -684,35 +684,27 @@ impl Instances {
         sc: &SwarmConfig,
         matcher: &BeeMatcher,
     ) -> Result<Vec<Bee>, Ec2Error> {
-        // multiple branches below need this
         async fn terminate_beez(client: &Client, beez: Vec<Bee>) -> Result<Vec<Bee>, Ec2Error> {
             let bee_ids = beez.iter().map(|b| b.id.clone()).collect::<Vec<String>>();
             match bee_ids.len() {
                 0 => Ok(Vec::new()),
                 _ => {
                     let r = client.terminate_instances();
-                    match r.set_instance_ids(Some(bee_ids.clone())).send().await {
-                        Ok(_) => Ok(beez.clone()),
-                        Err(e) => unimplemented!(),
-                    }
+                    r.set_instance_ids(Some(bee_ids.clone())).send().await?;
+                    Ok(beez.clone())
                 }
             }
         }
 
         match matcher {
-            // terminate list of ids
             BeeMatcher::Ids(beez) => match beez.len() {
                 0 => Ok(Vec::new()),
                 _ => terminate_beez(client, beez.clone()).await,
             },
-            // convert tag into list of ids, then terminate
             m @ BeeMatcher::Tagged(_) => {
-                match Instances::describe(client, m.clone(), types::InstanceStateName::Running)
-                    .await
-                {
-                    Ok(beez) => terminate_beez(client, beez.clone()).await,
-                    _ => Ok(Vec::new()),
-                }
+                let state = types::InstanceStateName::Running;
+                let beez = Instances::describe(client, m.clone(), state).await?;
+                terminate_beez(client, beez.clone()).await
             }
         }
     }
@@ -725,10 +717,7 @@ impl Instances {
         let mut delta = beez.len();
         let wait_seconds = 15;
         loop {
-            println!(
-                "[Instances] waiting {} seconds for {} beez",
-                wait_seconds, delta
-            );
+            println!("[Instances] waiting {wait_seconds} seconds for {delta} beez");
             hold_on(wait_seconds).await;
 
             let m = BeeMatcher::Ids(beez.clone());
