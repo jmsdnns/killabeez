@@ -1,12 +1,14 @@
-use async_ssh2_tokio::{
-    Error,
-    client::{AuthMethod, Client, CommandExecutedResult, ServerCheckMethod},
-};
+// use async_ssh2_tokio::{
+//     Error,
+//     client::{Auth, Client, CommandExecutedResult, ServerCheckMethod},
+// };
 use futures::{StreamExt, stream};
 
 use crate::aws::ec2::Bee;
 use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
+use crate::ssh::client::{Auth, Client};
+use crate::ssh::errors::SshError;
 
 pub struct SSHConnection {
     client: Client,
@@ -15,14 +17,14 @@ pub struct SSHConnection {
 }
 
 impl SSHConnection {
-    pub async fn open(host: &str, username: &str, auth: &AuthMethod) -> Self {
+    pub async fn open(host: &str, username: &str, auth: Auth) -> Self {
         let dst = match host.split(":").collect::<Vec<&str>>()[..] {
             [h, p] => (h, p.parse::<u16>().unwrap()),
             [h] => (h, 22),
             _ => panic!("Host value makes no sense: {}", host),
         };
 
-        let conn = Client::connect(dst, username, auth.clone(), ServerCheckMethod::NoCheck).await;
+        let conn = Client::connect(dst, username, auth).await;
 
         SSHConnection {
             client: conn.unwrap(),
@@ -37,16 +39,16 @@ pub struct SSHPool {
 }
 
 impl SSHPool {
-    pub fn load_key(sc: &SwarmConfig) -> Option<AuthMethod> {
+    pub fn load_key(sc: &SwarmConfig) -> Option<Auth> {
         sc.private_key_file()
-            .map(|pkf| AuthMethod::with_key_file(std::path::Path::new(&pkf), None))
+            .map(|pkf| Auth::KeyFile(std::path::PathBuf::from(&pkf), None))
     }
 
-    pub async fn new(hosts: &Vec<String>, username: &str, auth: &AuthMethod) -> SSHPool {
+    pub async fn new(hosts: &Vec<String>, username: &str, auth: Auth) -> SSHPool {
         let concurrency: usize = 10;
 
         let results = stream::iter(hosts)
-            .map(|host| SSHConnection::open(host, username, auth))
+            .map(|host| SSHConnection::open(host, username, auth.clone()))
             .buffer_unordered(concurrency)
             .collect::<Vec<SSHConnection>>()
             .await;
@@ -54,20 +56,27 @@ impl SSHPool {
         SSHPool { conns: results }
     }
 
-    pub async fn exec(&self, cmd: &str) -> Vec<CommandExecutedResult> {
+    pub async fn execute(&self, command: &str) -> Vec<Result<u32, SshError>> {
         stream::iter(self.conns.iter())
-            .map(|c| c.client.execute(cmd))
+            .map(|c| c.client.execute_and_print(command))
             .buffer_unordered(10)
-            .collect::<Vec<Result<CommandExecutedResult, Error>>>()
+            .collect::<Vec<Result<u32, SshError>>>()
             .await
-            .iter()
-            .map(|o| o.as_ref().unwrap().to_owned())
-            .collect::<Vec<CommandExecutedResult>>()
     }
-}
 
-pub fn print_results(results: Vec<CommandExecutedResult>) {
-    for r in results.iter() {
-        print!("{}", r.stdout);
+    pub async fn upload(&self, filename: &str) -> Vec<Result<u64, SshError>> {
+        stream::iter(self.conns.iter())
+            .map(|c| c.client.upload(filename, filename))
+            .buffer_unordered(10)
+            .collect::<Vec<Result<u64, SshError>>>()
+            .await
+    }
+
+    pub async fn download(&self, filename: &str) -> Vec<Result<u64, SshError>> {
+        stream::iter(self.conns.iter())
+            .map(|c| c.client.download(filename, filename))
+            .buffer_unordered(10)
+            .collect::<Vec<Result<u64, SshError>>>()
+            .await
     }
 }
