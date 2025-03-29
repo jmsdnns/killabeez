@@ -565,6 +565,10 @@ impl SSHKey {
                 {
                     Ok(kps) => Ok(kps.key_pairs.unwrap()),
                     Err(e) => {
+                        // KeyPair not found is communicated as error instead
+                        // of empty list, the more typical form. The function manages
+                        // the difference by converting the specific error into an
+                        // empty list
                         if let SdkError::ServiceError(service_err) = &e {
                             if let Some(code) = service_err.err().meta().code() {
                                 if code == "InvalidKeyPair.NotFound" {
