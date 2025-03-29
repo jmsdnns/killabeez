@@ -5,15 +5,16 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_ec2::Client;
 use aws_sdk_ec2::client::Waiters;
 use aws_sdk_ec2::error::SdkError;
+use aws_sdk_ec2::operation::import_key_pair::ImportKeyPairError;
 use aws_sdk_ec2::operation::{
     create_vpc::CreateVpcError, delete_vpc::builders::DeleteVpcFluentBuilder,
-    describe_instances::DescribeInstancesError, run_instances::RunInstancesError,
-    terminate_instances::TerminateInstancesError,
+    describe_instances::DescribeInstancesError, describe_key_pairs::DescribeKeyPairsError,
+    run_instances::RunInstancesError, terminate_instances::TerminateInstancesError,
 };
-use aws_sdk_ec2::types;
 use aws_sdk_ec2::types::builders::{
     IpPermissionBuilder, NetworkInterfaceBuilder, TagSpecificationBuilder, VpcBuilder,
 };
+use aws_sdk_ec2::types::{self, KeyPairInfo};
 use clap::builder::OsStr;
 
 use crate::aws::errors::Ec2Error;
@@ -555,13 +556,27 @@ impl SSHKey {
                 .await?
                 .key_pairs
                 .unwrap()),
-            SSHKeyMatcher::Name(key_name) => Ok(client
-                .describe_key_pairs()
-                .set_key_names(Some(vec![key_name.clone()]))
-                .send()
-                .await?
-                .key_pairs
-                .unwrap()),
+            SSHKeyMatcher::Name(key_name) => {
+                match client
+                    .describe_key_pairs()
+                    .set_key_names(Some(vec![key_name.clone()]))
+                    .send()
+                    .await
+                {
+                    Ok(kps) => Ok(kps.key_pairs.unwrap()),
+                    Err(e) => {
+                        if let SdkError::ServiceError(service_err) = &e {
+                            if let Some(code) = service_err.err().meta().code() {
+                                if code == "InvalidKeyPair.NotFound" {
+                                    return Ok(Vec::new());
+                                }
+                            };
+                        }
+
+                        Err(Ec2Error::DescribeSSHKey(e))
+                    }
+                }
+            }
         }
     }
 
