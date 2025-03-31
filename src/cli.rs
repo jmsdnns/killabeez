@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 use crate::aws::scenarios::{AWSNetwork, Swarm};
 use crate::aws::{ec2, tagged};
@@ -105,8 +106,14 @@ pub async fn run() {
                 .collect::<Vec<String>>();
 
             let auth = SSHPool::load_key(&sc).unwrap();
-            let ssh_pool = SSHPool::new(&hosts, &sc.username.unwrap(), auth).await;
-            let results = ssh_pool.execute("ls").await;
+            let log_dir = Some(PathBuf::from("./logs"));
+            let ssh_pool =
+                SSHPool::new_with_logging(&hosts, &sc.username.unwrap(), auth, log_dir).await;
+            let results = ssh_pool.execute("hostname").await;
+            for r in results.iter() {
+                println!("{}", r.as_ref().unwrap());
+            }
+            let results = ssh_pool.execute("ls -la").await;
             for r in results.iter() {
                 println!("{}", r.as_ref().unwrap());
             }
