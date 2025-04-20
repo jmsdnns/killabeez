@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::errors::SshError;
-use crate::ssh::logger::OutputLogger;
+use crate::ssh::output::OutputLogger;
 
 #[derive(Debug, Clone)]
 pub enum Auth {

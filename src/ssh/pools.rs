@@ -7,7 +7,7 @@ use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
 use crate::ssh::client::{Auth, Client};
 use crate::ssh::errors::SshError;
-use crate::ssh::logger::{OutputLogger, StreamLogger};
+use crate::ssh::output::{OutputLogger, StreamLogger};
 
 pub struct SSHConnection {
     client: Client,
