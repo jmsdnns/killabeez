@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::errors::SshError;
-use crate::ssh::logger::ConnectionLogger;
+use crate::ssh::logger::OutputLogger;
 
 #[derive(Debug, Clone)]
 pub enum Auth {
@@ -27,7 +27,7 @@ impl Handler for ClientHandler {
 
 pub struct Client {
     handle: Handle<ClientHandler>,
-    logger: Option<Arc<ConnectionLogger>>,
+    logger: Option<Arc<dyn OutputLogger>>,
 }
 
 impl Client {
@@ -35,7 +35,7 @@ impl Client {
         address: impl std::net::ToSocketAddrs,
         username: &str,
         auth: Auth,
-        logger: Option<Arc<ConnectionLogger>>,
+        logger: Option<Arc<dyn OutputLogger>>,
     ) -> Result<Self, SshError> {
         let config = Arc::new(Config::default());
         let addr = address
@@ -137,7 +137,7 @@ impl Client {
             std::io::stdout().write_all(data).unwrap();
             std::io::stdout().flush().unwrap();
             if let Some(logger) = &self.logger {
-                if let Err(e) = logger.log_stdout(data) {
+                if let Err(e) = logger.stdout(data) {
                     eprintln!("Failed to log stdout: {}", e);
                 }
             }
@@ -147,7 +147,7 @@ impl Client {
             std::io::stderr().write_all(data).unwrap();
             std::io::stderr().flush().unwrap();
             if let Some(logger) = &self.logger {
-                if let Err(e) = logger.log_stderr(data) {
+                if let Err(e) = logger.stderr(data) {
                     eprintln!("Failed to log stderr: {}", e);
                 }
             }

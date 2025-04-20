@@ -1,15 +1,20 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-pub struct ConnectionLogger {
-    stdout_file: Arc<Mutex<File>>,
-    stderr_file: Arc<Mutex<File>>,
-    host_id: String,
+pub trait OutputLogger: Send + Sync {
+    fn stdout(&self, data: &[u8]) -> io::Result<()>;
+    fn stderr(&self, data: &[u8]) -> io::Result<()>;
 }
 
-impl ConnectionLogger {
+pub struct StreamLogger {
+    host_id: String,
+    stdout_file: Arc<Mutex<File>>,
+    stderr_file: Arc<Mutex<File>>,
+}
+
+impl StreamLogger {
     pub fn new(host_id: &str, log_dir: &Path) -> io::Result<Self> {
         std::fs::create_dir_all(log_dir)?;
 
@@ -35,24 +40,10 @@ impl ConnectionLogger {
         })
     }
 
-    pub fn log_stdout(&self, data: &[u8]) -> io::Result<()> {
+    pub fn log_to_file(&self, file: &mut MutexGuard<File>, data: &[u8]) -> io::Result<()> {
         let timestamp = chrono::Local::now()
             .format("[%Y-%m-%d %H:%M:%S] ")
             .to_string();
-        let mut file = self.stdout_file.lock().unwrap();
-        file.write_all(timestamp.as_bytes())?;
-        file.write_all(data)?;
-        if !data.ends_with(b"\n") {
-            file.write_all(b"\n")?;
-        }
-        file.flush()
-    }
-
-    pub fn log_stderr(&self, data: &[u8]) -> io::Result<()> {
-        let timestamp = chrono::Local::now()
-            .format("[%Y-%m-%d %H:%M:%S] ")
-            .to_string();
-        let mut file = self.stderr_file.lock().unwrap();
         file.write_all(timestamp.as_bytes())?;
         file.write_all(data)?;
         if !data.ends_with(b"\n") {
@@ -63,5 +54,17 @@ impl ConnectionLogger {
 
     pub fn host_id(&self) -> &str {
         &self.host_id
+    }
+}
+
+impl OutputLogger for StreamLogger {
+    fn stdout(&self, data: &[u8]) -> io::Result<()> {
+        let mut file = self.stdout_file.lock().unwrap();
+        self.log_to_file(&mut file, data)
+    }
+
+    fn stderr(&self, data: &[u8]) -> io::Result<()> {
+        let mut file = self.stderr_file.lock().unwrap();
+        self.log_to_file(&mut file, data)
     }
 }
