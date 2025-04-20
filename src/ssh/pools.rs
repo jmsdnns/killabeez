@@ -7,13 +7,13 @@ use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
 use crate::ssh::client::{Auth, Client};
 use crate::ssh::errors::SshError;
-use crate::ssh::output::{OutputLogger, StreamLogger};
+use crate::ssh::output::{OutputHandler, StreamLogger};
 
 pub struct SSHConnection {
     client: Client,
     host: String,
     username: String,
-    logger: Option<Arc<dyn OutputLogger>>,
+    logger: Option<Arc<dyn OutputHandler>>,
 }
 
 impl SSHConnection {
@@ -28,7 +28,7 @@ impl SSHConnection {
         let host_id = host.replace(":", "_").replace(".", "_");
         let logger = match log_dir {
             Some(dir) => match StreamLogger::new(&host_id, dir) {
-                Ok(logger) => Some(Arc::new(logger) as Arc<dyn OutputLogger>),
+                Ok(logger) => Some(Arc::new(logger) as Arc<dyn OutputHandler>),
                 Err(e) => {
                     eprintln!("Failed to create logger for {}: {}", host, e);
                     None

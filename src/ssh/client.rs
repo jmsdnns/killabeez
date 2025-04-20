@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::errors::SshError;
-use crate::ssh::output::OutputLogger;
+use crate::ssh::output::OutputHandler;
 
 #[derive(Debug, Clone)]
 pub enum Auth {
@@ -27,7 +27,7 @@ impl Handler for ClientHandler {
 
 pub struct Client {
     handle: Handle<ClientHandler>,
-    logger: Option<Arc<dyn OutputLogger>>,
+    logger: Option<Arc<dyn OutputHandler>>,
 }
 
 impl Client {
@@ -35,7 +35,7 @@ impl Client {
         address: impl std::net::ToSocketAddrs,
         username: &str,
         auth: Auth,
-        logger: Option<Arc<dyn OutputLogger>>,
+        logger: Option<Arc<dyn OutputHandler>>,
     ) -> Result<Self, SshError> {
         let config = Arc::new(Config::default());
         let addr = address

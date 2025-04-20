@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub trait OutputLogger: Send + Sync {
+pub trait OutputHandler: Send + Sync {
     fn stdout(&self, data: &[u8]) -> io::Result<()>;
     fn stderr(&self, data: &[u8]) -> io::Result<()>;
 }
@@ -57,7 +57,7 @@ impl StreamLogger {
     }
 }
 
-impl OutputLogger for StreamLogger {
+impl OutputHandler for StreamLogger {
     fn stdout(&self, data: &[u8]) -> io::Result<()> {
         let mut file = self.stdout_file.lock().unwrap();
         self.log_to_file(&mut file, data)
