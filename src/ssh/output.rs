@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub trait OutputHandler: Send + Sync {
+    fn host_id(&self) -> &str;
     fn stdout(&self, data: &[u8]) -> io::Result<()>;
     fn stderr(&self, data: &[u8]) -> io::Result<()>;
 }
@@ -49,13 +50,13 @@ impl StreamLogger {
         }
         file.flush()
     }
-
-    pub fn host_id(&self) -> &str {
-        &self.host_id
-    }
 }
 
 impl OutputHandler for StreamLogger {
+    fn host_id(&self) -> &str {
+        &self.host_id
+    }
+
     fn stdout(&self, data: &[u8]) -> io::Result<()> {
         let mut file = self.stdout_file.lock().unwrap();
         self.log_to_file(&mut file, data)
