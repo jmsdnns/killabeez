@@ -107,6 +107,7 @@ impl Client {
         G: FnMut(&[u8]) + Send,
     {
         let mut channel = self.handle.channel_open_session().await?;
+        let command = self.logger.as_ref().unwrap().update_command(command);
         channel.exec(true, command).await?;
 
         let mut exit_status = None;
@@ -114,10 +115,12 @@ impl Client {
         while let Some(msg) = channel.wait().await {
             match msg {
                 russh::ChannelMsg::Data { ref data } => {
-                    stdout_handler(data);
+                    //stdout_handler(data);
+                    self.logger.as_ref().unwrap().stdout(data);
                 }
                 russh::ChannelMsg::ExtendedData { ref data, ext: 1 } => {
-                    stderr_handler(data);
+                    // stderr_handler(data);
+                    self.logger.as_ref().unwrap().stderr(data);
                 }
                 russh::ChannelMsg::ExitStatus { exit_status: code } => {
                     exit_status = Some(code);
@@ -134,8 +137,8 @@ impl Client {
         use std::io::Write;
 
         let mut stdout_handler = |data: &[u8]| {
-            std::io::stdout().write_all(data).unwrap();
-            std::io::stdout().flush().unwrap();
+            // std::io::stdout().write_all(data).unwrap();
+            // std::io::stdout().flush().unwrap();
             if let Some(logger) = &self.logger {
                 if let Err(e) = logger.stdout(data) {
                     eprintln!("Failed to log stdout: {}", e);
@@ -144,8 +147,8 @@ impl Client {
         };
 
         let mut stderr_handler = |data: &[u8]| {
-            std::io::stderr().write_all(data).unwrap();
-            std::io::stderr().flush().unwrap();
+            // std::io::stderr().write_all(data).unwrap();
+            // std::io::stderr().flush().unwrap();
             if let Some(logger) = &self.logger {
                 if let Err(e) = logger.stderr(data) {
                     eprintln!("Failed to log stderr: {}", e);

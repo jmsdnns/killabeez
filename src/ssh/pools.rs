@@ -7,7 +7,7 @@ use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
 use crate::ssh::client::{Auth, Client};
 use crate::ssh::errors::SshError;
-use crate::ssh::output::{OutputHandler, StreamLogger};
+use crate::ssh::output::{OutputHandler, RemoteFiles, StreamLogger};
 
 pub struct SSHConnection {
     client: Client,
@@ -27,7 +27,14 @@ impl SSHConnection {
         // prepare  logger
         let host_id = host.replace(":", "_").replace(".", "_");
         let logger = match log_dir {
-            Some(dir) => match StreamLogger::new(&host_id, dir) {
+            // This is just showing that RemoteFiles works. Which one is used
+            // will soon be handled with an enum
+            // Some(dir) => match StreamLogger::new(&host_id, dir) {
+            Some(dir) => match RemoteFiles::new(
+                &host_id,
+                Some(PathBuf::from("stdout.log")),
+                Some(PathBuf::from("stderr.log")),
+            ) {
                 Ok(logger) => Some(Arc::new(logger) as Arc<dyn OutputHandler>),
                 Err(e) => {
                     eprintln!("Failed to create logger for {}: {}", host, e);
