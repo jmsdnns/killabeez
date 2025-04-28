@@ -8,11 +8,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::ssh::errors::SshError;
 use crate::ssh::output::OutputHandler;
 
+/// The options available for SSH authentication
 #[derive(Debug, Clone)]
 pub enum Auth {
     Password(String),
     KeyFile(PathBuf, Option<String>),
     KeyData(String, Option<String>),
+}
+
+/// The choices for output handling
+#[derive(Debug, Clone)]
+pub enum Output {
+    Stream(PathBuf, bool),
+    Remote(PathBuf, bool),
 }
 
 pub struct ClientHandler;
@@ -25,9 +33,10 @@ impl Handler for ClientHandler {
     }
 }
 
+/// Associates the russh client without output handling
 pub struct Client {
     handle: Handle<ClientHandler>,
-    logger: Option<Arc<dyn OutputHandler>>,
+    output: Arc<dyn OutputHandler>,
 }
 
 impl Client {
@@ -35,7 +44,7 @@ impl Client {
         address: impl std::net::ToSocketAddrs,
         username: &str,
         auth: Auth,
-        logger: Option<Arc<dyn OutputHandler>>,
+        output: Arc<dyn OutputHandler>,
     ) -> Result<Self, SshError> {
         let config = Arc::new(Config::default());
         let addr = address
@@ -64,7 +73,7 @@ impl Client {
             }
         }
 
-        Ok(Self { handle, logger })
+        Ok(Self { handle, output })
     }
 
     async fn auth_with_key(
@@ -96,31 +105,24 @@ impl Client {
         Ok(())
     }
 
-    pub async fn execute<F, G>(
-        &self,
-        command: &str,
-        mut stdout_handler: F,
-        mut stderr_handler: G,
-    ) -> Result<u32, SshError>
-    where
-        F: FnMut(&[u8]) + Send,
-        G: FnMut(&[u8]) + Send,
-    {
+    /// run command on remote host
+    pub async fn execute(&self, command: &str) -> Result<u32, SshError> {
+        // output choice may need to modify command string
+        let command = self.output.as_ref().update_command(command);
+
+        // run command
         let mut channel = self.handle.channel_open_session().await?;
-        let command = self.logger.as_ref().unwrap().update_command(command);
         channel.exec(true, command).await?;
 
+        // handle stdout & stderr from remote until exit code
         let mut exit_status = None;
-
         while let Some(msg) = channel.wait().await {
             match msg {
                 russh::ChannelMsg::Data { ref data } => {
-                    //stdout_handler(data);
-                    self.logger.as_ref().unwrap().stdout(data);
+                    self.output.as_ref().stdout(data);
                 }
                 russh::ChannelMsg::ExtendedData { ref data, ext: 1 } => {
-                    // stderr_handler(data);
-                    self.logger.as_ref().unwrap().stderr(data);
+                    self.output.as_ref().stderr(data);
                 }
                 russh::ChannelMsg::ExitStatus { exit_status: code } => {
                     exit_status = Some(code);
@@ -133,33 +135,7 @@ impl Client {
             .ok_or_else(|| SshError::CommandError("Command didn't exit properly".to_string()))
     }
 
-    pub async fn execute_and_print(&self, command: &str) -> Result<u32, SshError> {
-        use std::io::Write;
-
-        let mut stdout_handler = |data: &[u8]| {
-            // std::io::stdout().write_all(data).unwrap();
-            // std::io::stdout().flush().unwrap();
-            if let Some(logger) = &self.logger {
-                if let Err(e) = logger.stdout(data) {
-                    eprintln!("Failed to log stdout: {}", e);
-                }
-            }
-        };
-
-        let mut stderr_handler = |data: &[u8]| {
-            // std::io::stderr().write_all(data).unwrap();
-            // std::io::stderr().flush().unwrap();
-            if let Some(logger) = &self.logger {
-                if let Err(e) = logger.stderr(data) {
-                    eprintln!("Failed to log stderr: {}", e);
-                }
-            }
-        };
-
-        self.execute(command, &mut stdout_handler, &mut stderr_handler)
-            .await
-    }
-
+    /// create sftp channel from existing ssh channel
     async fn sftp_session(&self) -> Result<SftpSession, SshError> {
         let channel = self.handle.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
@@ -167,6 +143,7 @@ impl Client {
         Ok(session)
     }
 
+    /// puts file on remote host
     pub async fn upload(
         &self,
         source: impl AsRef<Path>,
@@ -200,6 +177,7 @@ impl Client {
         Ok(total_bytes)
     }
 
+    /// pulls file from remote host
     pub async fn download(
         &self,
         source: &str,

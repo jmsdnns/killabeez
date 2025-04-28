@@ -5,59 +5,62 @@ use std::sync::Arc;
 use crate::aws::ec2::Bee;
 use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
-use crate::ssh::client::{Auth, Client};
+use crate::ssh::client::{Auth, Client, Output};
 use crate::ssh::errors::SshError;
 use crate::ssh::output::{OutputHandler, RemoteFiles, StreamLogger};
 
+/// tracks the basic elements of an SSH connection
 pub struct SSHConnection {
+    /// killabeez ssh client
     client: Client,
+
+    /// remote host address, as hostname or IP
     host: String,
+
+    /// remote username
     username: String,
-    logger: Option<Arc<dyn OutputHandler>>,
 }
 
 impl SSHConnection {
-    pub async fn open(host: &str, username: &str, auth: Auth, log_dir: Option<&PathBuf>) -> Self {
+    /// Opens a connection to `host` and prepares the output handler for the
+    /// ssh client
+    pub async fn open(host: &str, username: &str, auth: Auth, output: Output) -> Self {
         let dst = match host.split(":").collect::<Vec<&str>>()[..] {
             [h, p] => (h, p.parse::<u16>().unwrap()),
             [h] => (h, 22),
             _ => panic!("Host value makes no sense: {}", host),
         };
 
-        // prepare  logger
         let host_id = host.replace(":", "_").replace(".", "_");
-        let logger = match log_dir {
-            // This is just showing that RemoteFiles works. Which one is used
-            // will soon be handled with an enum
-            // Some(dir) => match StreamLogger::new(&host_id, dir) {
-            Some(dir) => match RemoteFiles::new(
-                &host_id,
-                Some(PathBuf::from("stdout.log")),
-                Some(PathBuf::from("stderr.log")),
-            ) {
-                Ok(logger) => Some(Arc::new(logger) as Arc<dyn OutputHandler>),
-                Err(e) => {
-                    eprintln!("Failed to create logger for {}: {}", host, e);
-                    None
+
+        let output_handler: Arc<dyn OutputHandler> = match output {
+            Output::Stream(log_root, verbose) => {
+                match StreamLogger::new(&host_id, &log_root, verbose) {
+                    Ok(logger) => Arc::new(logger) as Arc<dyn OutputHandler>,
+                    Err(e) => panic!("ERROR boo {}", e),
                 }
-            },
-            None => None,
+            }
+            Output::Remote(log_root, verbose) => {
+                match RemoteFiles::new(&host_id, Some(&log_root.clone()), verbose) {
+                    Ok(logger) => Arc::new(logger) as Arc<dyn OutputHandler>,
+                    Err(e) => panic!("ERROR boo {}", e),
+                }
+            }
         };
 
-        let conn = Client::connect(dst, username, auth, logger.clone()).await;
+        let conn = Client::connect(dst, username, auth, output_handler.clone()).await;
 
         SSHConnection {
             client: conn.unwrap(),
             host: String::from(host),
             username: String::from(username),
-            logger,
         }
     }
 }
 
 pub struct SSHPool {
     conns: Vec<SSHConnection>,
-    log_dir: Option<PathBuf>,
+    output: Output,
 }
 
 impl SSHPool {
@@ -66,33 +69,23 @@ impl SSHPool {
             .map(|pkf| Auth::KeyFile(std::path::PathBuf::from(&pkf), None))
     }
 
-    pub async fn new(hosts: &Vec<String>, username: &str, auth: Auth) -> SSHPool {
-        Self::new_with_logging(hosts, username, auth, None).await
-    }
-
-    pub async fn new_with_logging(
-        hosts: &Vec<String>,
-        username: &str,
-        auth: Auth,
-        log_dir: Option<PathBuf>,
-    ) -> SSHPool {
+    pub async fn new(hosts: &Vec<String>, username: &str, auth: Auth, output: Output) -> SSHPool {
         let concurrency: usize = 10;
-
         let results = stream::iter(hosts)
-            .map(|host| SSHConnection::open(host, username, auth.clone(), log_dir.as_ref()))
+            .map(|host| SSHConnection::open(host, username, auth.clone(), output.clone()))
             .buffer_unordered(concurrency)
             .collect::<Vec<SSHConnection>>()
             .await;
 
         SSHPool {
             conns: results,
-            log_dir,
+            output,
         }
     }
 
     pub async fn execute(&self, command: &str) -> Vec<Result<u32, SshError>> {
         stream::iter(self.conns.iter())
-            .map(|c| c.client.execute_and_print(command))
+            .map(|c| c.client.execute(command))
             .buffer_unordered(10)
             .collect::<Vec<Result<u32, SshError>>>()
             .await
