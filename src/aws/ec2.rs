@@ -27,7 +27,7 @@ const CIDR_SUBNET: &str = "10.0.1.0/24";
 const CIDR_GATEWAY: &str = "0.0.0.0/0";
 
 pub async fn mk_client() -> Client {
-    let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
+    let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2025_01_17()).await;
     Client::new(&config)
 }
 

@@ -5,7 +5,7 @@ use tokio;
 pub async fn all_beez_tags() -> Result<(), Error> {
     println!("[all_beez_tags] hey");
 
-    let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2024_03_28()).await;
+    let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2025_01_17()).await;
     println!("[all_beez_tags] config");
 
     let client = Client::new(&config);
