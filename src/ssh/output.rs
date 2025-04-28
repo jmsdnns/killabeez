@@ -14,7 +14,7 @@ pub trait OutputHandler: Send + Sync {
     /// Processes streams of stderr from remote host
     fn stderr(&self, data: &[u8]) -> io::Result<()>;
 
-    /// Function that modifies a command string before execution
+    /// Modifies a command string before execution
     fn update_command(&self, command: &str) -> String {
         String::from(command)
     }
