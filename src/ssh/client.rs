@@ -35,7 +35,7 @@ impl Handler for ClientHandler {
 
 /// Associates the russh client without output handling
 pub struct Client {
-    handle: Handle<ClientHandler>,
+    pub handle: Handle<ClientHandler>,
     output: Arc<dyn OutputHandler>,
 }
 
@@ -133,75 +133,5 @@ impl Client {
 
         exit_status
             .ok_or_else(|| SshError::CommandError("Command didn't exit properly".to_string()))
-    }
-
-    /// create sftp channel from existing ssh channel
-    async fn sftp_session(&self) -> Result<SftpSession, SshError> {
-        let channel = self.handle.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        let session = SftpSession::new(channel.into_stream()).await?;
-        Ok(session)
-    }
-
-    /// puts file on remote host
-    pub async fn upload(
-        &self,
-        source: impl AsRef<Path>,
-        destination: &str,
-    ) -> Result<u64, SshError> {
-        let session = self.sftp_session().await?;
-
-        let mut local_file = tokio::fs::File::open(source).await?;
-        let mut remote_file = session
-            .open_with_flags(
-                destination,
-                OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
-            )
-            .await?;
-
-        // stream 32k chunks
-        let mut buffer = [0u8; 32768];
-        let mut total_bytes = 0;
-        loop {
-            match local_file.read(&mut buffer).await? {
-                0 => break,
-                bytes_read => {
-                    remote_file.write_all(&buffer[..bytes_read]).await?;
-                    total_bytes += bytes_read as u64;
-                }
-            }
-        }
-
-        remote_file.flush().await?;
-        remote_file.shutdown().await?;
-        Ok(total_bytes)
-    }
-
-    /// pulls file from remote host
-    pub async fn download(
-        &self,
-        source: &str,
-        destination: impl AsRef<Path>,
-    ) -> Result<u64, SshError> {
-        let session = self.sftp_session().await?;
-
-        let mut remote_file = session.open_with_flags(source, OpenFlags::READ).await?;
-        let mut local_file = tokio::fs::File::create(destination).await?;
-
-        // stream 32k chunks
-        let mut buffer = [0u8; 32768];
-        let mut total_bytes = 0;
-        loop {
-            match remote_file.read(&mut buffer).await? {
-                0 => break,
-                bytes_read => {
-                    local_file.write_all(&buffer[..bytes_read]).await?;
-                    total_bytes += bytes_read as u64;
-                }
-            }
-        }
-
-        local_file.flush().await?;
-        Ok(total_bytes)
     }
 }

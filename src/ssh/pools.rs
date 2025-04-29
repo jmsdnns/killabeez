@@ -1,4 +1,4 @@
-use futures::{StreamExt, stream};
+use futures::{StreamExt, TryFutureExt, future, stream};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -7,18 +7,19 @@ use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
 use crate::ssh::client::{Auth, Client, Output};
 use crate::ssh::errors::SshError;
+use crate::ssh::files::SFTPConnection;
 use crate::ssh::output::{OutputHandler, RemoteFiles, StreamLogger};
 
 /// tracks the basic elements of an SSH connection
 pub struct SSHConnection {
     /// killabeez ssh client
-    client: Client,
+    pub client: Client,
 
     /// remote host address, as hostname or IP
-    host: String,
+    pub host: String,
 
     /// remote username
-    username: String,
+    pub username: String,
 }
 
 impl SSHConnection {
@@ -93,7 +94,15 @@ impl SSHPool {
 
     pub async fn upload(&self, filename: &str) -> Vec<Result<u64, SshError>> {
         stream::iter(self.conns.iter())
-            .map(|c| c.client.upload(filename, filename))
+            .map(|c| {
+                Box::pin(async {
+                    SFTPConnection::open(c)
+                        .await
+                        .unwrap()
+                        .upload(filename, filename)
+                        .await
+                })
+            })
             .buffer_unordered(10)
             .collect::<Vec<Result<u64, SshError>>>()
             .await
@@ -101,7 +110,15 @@ impl SSHPool {
 
     pub async fn download(&self, filename: &str) -> Vec<Result<u64, SshError>> {
         stream::iter(self.conns.iter())
-            .map(|c| c.client.download(filename, filename))
+            .map(|c| {
+                Box::pin(async {
+                    SFTPConnection::open(c)
+                        .await
+                        .unwrap()
+                        .download(filename, filename)
+                        .await
+                })
+            })
             .buffer_unordered(10)
             .collect::<Vec<Result<u64, SshError>>>()
             .await
