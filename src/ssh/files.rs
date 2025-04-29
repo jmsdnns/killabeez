@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::client::Client;
 use crate::ssh::errors::SshError;
-use crate::ssh::output::OutputHandler;
+use crate::ssh::io::IOHandler;
 use crate::ssh::pools::SSHConnection;
 
 pub struct SFTPConnection<'a> {

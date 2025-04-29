@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::errors::SshError;
-use crate::ssh::output::OutputHandler;
+use crate::ssh::io::IOHandler;
 
 /// The options available for SSH authentication
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ impl Handler for ClientHandler {
 /// Associates the russh client without output handling
 pub struct Client {
     pub handle: Handle<ClientHandler>,
-    output: Arc<dyn OutputHandler>,
+    output: Arc<dyn IOHandler>,
 }
 
 impl Client {
@@ -44,7 +44,7 @@ impl Client {
         address: impl std::net::ToSocketAddrs,
         username: &str,
         auth: Auth,
-        output: Arc<dyn OutputHandler>,
+        output: Arc<dyn IOHandler>,
     ) -> Result<Self, SshError> {
         let config = Arc::new(Config::default());
         let addr = address

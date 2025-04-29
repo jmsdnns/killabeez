@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// A trait focused on managing stdout and stderr
-pub trait OutputHandler: Send + Sync {
+pub trait IOHandler: Send + Sync {
     /// ID for host that implementation is handling output for
     fn host_id(&self) -> &str;
 
@@ -22,14 +22,14 @@ pub trait OutputHandler: Send + Sync {
 
 /// Write stdout & stderr to the remote filesystem, minimizing chat between
 /// local machine and remotes
-pub struct RemoteFiles {
+pub struct RemoteIO {
     host_id: String,
     out_path: PathBuf,
     err_path: PathBuf,
     verbose: bool,
 }
 
-impl RemoteFiles {
+impl RemoteIO {
     pub fn new(host_id: &str, log_root: Option<&PathBuf>, verbose: bool) -> io::Result<Self> {
         let stdout = PathBuf::from("stdout.log");
         let stderr = PathBuf::from("stderr.log");
@@ -51,7 +51,7 @@ impl RemoteFiles {
     }
 }
 
-impl OutputHandler for RemoteFiles {
+impl IOHandler for RemoteIO {
     fn host_id(&self) -> &str {
         &self.host_id
     }
@@ -102,14 +102,14 @@ impl OutputHandler for RemoteFiles {
 }
 
 /// Threadsafe struct that handles writing output streams to local files
-pub struct StreamLogger {
+pub struct StreamIO {
     host_id: String,
     stdout_file: Arc<Mutex<File>>,
     stderr_file: Arc<Mutex<File>>,
     verbose: bool,
 }
 
-impl StreamLogger {
+impl StreamIO {
     pub fn new(host_id: &str, log_dir: &Path, verbose: bool) -> io::Result<Self> {
         std::fs::create_dir_all(log_dir)?;
 
@@ -147,7 +147,7 @@ impl StreamLogger {
     }
 }
 
-impl OutputHandler for StreamLogger {
+impl IOHandler for StreamIO {
     fn host_id(&self) -> &str {
         &self.host_id
     }

@@ -8,7 +8,7 @@ use crate::config::SwarmConfig;
 use crate::ssh::client::{Auth, Client, Output};
 use crate::ssh::errors::SshError;
 use crate::ssh::files::SFTPConnection;
-use crate::ssh::output::{OutputHandler, RemoteFiles, StreamLogger};
+use crate::ssh::io::{IOHandler, RemoteIO, StreamIO};
 
 /// tracks the basic elements of an SSH connection
 pub struct SSHConnection {
@@ -34,16 +34,16 @@ impl SSHConnection {
 
         let host_id = host.replace(":", "_").replace(".", "_");
 
-        let output_handler: Arc<dyn OutputHandler> = match output {
+        let output_handler: Arc<dyn IOHandler> = match output {
             Output::Stream(log_root, verbose) => {
-                match StreamLogger::new(&host_id, &log_root, verbose) {
-                    Ok(logger) => Arc::new(logger) as Arc<dyn OutputHandler>,
+                match StreamIO::new(&host_id, &log_root, verbose) {
+                    Ok(logger) => Arc::new(logger) as Arc<dyn IOHandler>,
                     Err(e) => panic!("ERROR boo {}", e),
                 }
             }
             Output::Remote(log_root, verbose) => {
-                match RemoteFiles::new(&host_id, Some(&log_root.clone()), verbose) {
-                    Ok(logger) => Arc::new(logger) as Arc<dyn OutputHandler>,
+                match RemoteIO::new(&host_id, Some(&log_root.clone()), verbose) {
+                    Ok(logger) => Arc::new(logger) as Arc<dyn IOHandler>,
                     Err(e) => panic!("ERROR boo {}", e),
                 }
             }
