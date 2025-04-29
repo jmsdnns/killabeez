@@ -3,10 +3,11 @@ use std::io::{self, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::ssh::files::SessionData;
+use crate::ssh::errors::SshError;
+use crate::ssh::pools::SSHConnection;
 
-const STDOUT_FILE: &str = "stdout.log";
-const STDERR_FILE: &str = "stderr.log";
+pub const STDOUT_FILE: &str = "stdout.log";
+pub const STDERR_FILE: &str = "stderr.log";
 
 /// The choices for output handling
 #[derive(Debug, Clone)]
@@ -27,27 +28,27 @@ pub trait IOHandler: Send + Sync {
     fn update_command(&self, command: &str) -> String {
         String::from(command)
     }
+
+    /// List of IO related files created remotely by handler
+    fn artifacts(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
 }
 
 /// Write stdout & stderr to the remote filesystem, minimizing chat between
 /// local machine and remotes
 pub struct RemoteIO {
-    session_data: SessionData,
     out_path: PathBuf,
     err_path: PathBuf,
     verbose: bool,
 }
 
 impl RemoteIO {
-    pub fn new(session_data: SessionData, verbose: bool) -> io::Result<Self> {
-        let out_path =
-            PathBuf::from_iter([session_data.remote_root.clone(), PathBuf::from(STDOUT_FILE)]);
-
-        let err_path =
-            PathBuf::from_iter([session_data.remote_root.clone(), PathBuf::from(STDERR_FILE)]);
+    pub fn new(remote_root: &Path, verbose: bool) -> io::Result<Self> {
+        let out_path = remote_root.join(STDOUT_FILE);
+        let err_path = remote_root.join(STDERR_FILE);
 
         Ok(Self {
-            session_data,
             out_path,
             err_path,
             verbose,
@@ -97,32 +98,34 @@ impl IOHandler for RemoteIO {
             format!("{} > >({}) 2> >({})", cmd, outh, errh)
         }
     }
+
+    fn artifacts(&self) -> Vec<PathBuf> {
+        vec![PathBuf::from(STDOUT_FILE), PathBuf::from(STDERR_FILE)]
+    }
 }
 
 /// Threadsafe struct that handles writing output streams to local files
 pub struct StreamIO {
-    session_data: SessionData,
     stdout_file: Arc<Mutex<File>>,
     stderr_file: Arc<Mutex<File>>,
     verbose: bool,
 }
 
 impl StreamIO {
-    pub fn new(session_data: SessionData, verbose: bool) -> io::Result<Self> {
-        let stdout_path = session_data.local_root.join(STDOUT_FILE);
+    pub fn new(local_root: &Path, verbose: bool) -> io::Result<Self> {
+        let stdout_path = local_root.join(STDOUT_FILE);
         let stdout_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(stdout_path)?;
 
-        let stderr_path = session_data.local_root.join(STDERR_FILE);
+        let stderr_path = local_root.join(STDERR_FILE);
         let stderr_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(stderr_path)?;
 
         Ok(Self {
-            session_data,
             stdout_file: Arc::new(Mutex::new(stdout_file)),
             stderr_file: Arc::new(Mutex::new(stderr_file)),
             verbose,

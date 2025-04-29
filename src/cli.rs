@@ -168,6 +168,9 @@ pub async fn run() {
             // NOTE: will become flexible soon
             ssh_pool.execute("hostname").await;
             ssh_pool.execute("ls -la").await;
+
+            println!("[cli exec] fetching remote artifacts");
+            ssh_pool.finish().await;
         }
 
         Commands::Upload {

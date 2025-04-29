@@ -5,7 +5,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::ssh::client::Client;
 use crate::ssh::errors::SshError;
-use crate::ssh::io::IOHandler;
+use crate::ssh::io::{IOHandler, STDERR_FILE, STDOUT_FILE};
 use crate::ssh::pools::SSHConnection;
 
 pub const DEFAULT_LOCAL_ROOT: &str = "kb.data";
