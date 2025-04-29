@@ -8,6 +8,46 @@ use crate::ssh::errors::SshError;
 use crate::ssh::io::IOHandler;
 use crate::ssh::pools::SSHConnection;
 
+pub const DEFAULT_LOCAL_ROOT: &str = "kb.data";
+pub const DEFAULT_REMOTE_ROOT: &str = ".";
+
+#[derive(Debug, Clone)]
+pub struct SessionData {
+    host_id: String,
+    pub local_root: PathBuf,
+    pub remote_root: PathBuf,
+}
+
+impl SessionData {
+    pub fn init(session_root: PathBuf) -> IOResult<()> {
+        std::fs::create_dir_all(&session_root)
+    }
+
+    pub fn new(host: String, local_root: PathBuf, remote_root: Option<PathBuf>) -> IOResult<Self> {
+        let host_id = host.replace(":", "-").replace(".", "_");
+
+        let local_root = local_root.join(&host_id);
+        std::fs::create_dir_all(&local_root)?;
+
+        let remote_root = match remote_root {
+            Some(dir_path) => dir_path,
+            None => PathBuf::from(DEFAULT_REMOTE_ROOT),
+        };
+
+        // TODO: create remote dir
+
+        Ok(SessionData {
+            host_id,
+            local_root,
+            remote_root,
+        })
+    }
+
+    fn host_id(&self) -> &str {
+        &self.host_id
+    }
+}
+
 pub struct SFTPConnection<'a> {
     ssh_conn: &'a SSHConnection,
     session: SftpSession,

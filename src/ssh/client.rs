@@ -16,13 +16,6 @@ pub enum Auth {
     KeyData(String, Option<String>),
 }
 
-/// The choices for output handling
-#[derive(Debug, Clone)]
-pub enum Output {
-    Stream(PathBuf, bool),
-    Remote(PathBuf, bool),
-}
-
 pub struct ClientHandler;
 
 impl Handler for ClientHandler {
@@ -36,7 +29,6 @@ impl Handler for ClientHandler {
 /// Associates the russh client without output handling
 pub struct Client {
     pub handle: Handle<ClientHandler>,
-    output: Arc<dyn IOHandler>,
 }
 
 impl Client {
@@ -44,7 +36,6 @@ impl Client {
         address: impl std::net::ToSocketAddrs,
         username: &str,
         auth: Auth,
-        output: Arc<dyn IOHandler>,
     ) -> Result<Self, SshError> {
         let config = Arc::new(Config::default());
         let addr = address
@@ -73,7 +64,7 @@ impl Client {
             }
         }
 
-        Ok(Self { handle, output })
+        Ok(Self { handle })
     }
 
     async fn auth_with_key(
@@ -106,10 +97,11 @@ impl Client {
     }
 
     /// run command on remote host
-    pub async fn execute(&self, command: &str) -> Result<u32, SshError> {
-        // output choice may need to modify command string
-        let command = self.output.as_ref().update_command(command);
-
+    pub async fn execute(
+        &self,
+        command: &str,
+        io_handler: &Arc<dyn IOHandler>,
+    ) -> Result<u32, SshError> {
         // run command
         let mut channel = self.handle.channel_open_session().await?;
         channel.exec(true, command).await?;
@@ -119,10 +111,10 @@ impl Client {
         while let Some(msg) = channel.wait().await {
             match msg {
                 russh::ChannelMsg::Data { ref data } => {
-                    self.output.as_ref().stdout(data);
+                    io_handler.as_ref().stdout(data);
                 }
                 russh::ChannelMsg::ExtendedData { ref data, ext: 1 } => {
-                    self.output.as_ref().stderr(data);
+                    io_handler.as_ref().stderr(data);
                 }
                 russh::ChannelMsg::ExitStatus { exit_status: code } => {
                     exit_status = Some(code);

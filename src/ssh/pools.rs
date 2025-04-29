@@ -5,15 +5,20 @@ use std::sync::Arc;
 use crate::aws::ec2::Bee;
 use crate::aws::scenarios::Swarm;
 use crate::config::SwarmConfig;
-use crate::ssh::client::{Auth, Client, Output};
+use crate::ssh::client::{Auth, Client};
 use crate::ssh::errors::SshError;
 use crate::ssh::files::SFTPConnection;
-use crate::ssh::io::{IOHandler, RemoteIO, StreamIO};
+use crate::ssh::io::{IOConfig, IOHandler, RemoteIO, StreamIO};
+
+use super::files::SessionData;
 
 /// tracks the basic elements of an SSH connection
 pub struct SSHConnection {
     /// killabeez ssh client
     pub client: Client,
+
+    /// thread safe IO handler
+    pub io_handler: Arc<dyn IOHandler>,
 
     /// remote host address, as hostname or IP
     pub host: String,
@@ -23,45 +28,52 @@ pub struct SSHConnection {
 }
 
 impl SSHConnection {
-    /// Opens a connection to `host` and prepares the output handler for the
-    /// ssh client
-    pub async fn open(host: &str, username: &str, auth: Auth, output: Output) -> Self {
+    /// Opens a connection to `host` and prepares the io handler for the ssh client
+    pub async fn open(host: &str, username: &str, auth: Auth, io_config: IOConfig) -> Self {
         let dst = match host.split(":").collect::<Vec<&str>>()[..] {
             [h, p] => (h, p.parse::<u16>().unwrap()),
             [h] => (h, 22),
             _ => panic!("Host value makes no sense: {}", host),
         };
 
-        let host_id = host.replace(":", "_").replace(".", "_");
-
-        let output_handler: Arc<dyn IOHandler> = match output {
-            Output::Stream(log_root, verbose) => {
-                match StreamIO::new(&host_id, &log_root, verbose) {
+        let io_handler: Arc<dyn IOHandler> = match io_config {
+            IOConfig::Stream(local_root, verbose) => {
+                let sd = SessionData::new(host.to_string(), local_root.clone(), None).unwrap();
+                match StreamIO::new(sd.clone(), verbose) {
                     Ok(logger) => Arc::new(logger) as Arc<dyn IOHandler>,
                     Err(e) => panic!("ERROR boo {}", e),
                 }
             }
-            Output::Remote(log_root, verbose) => {
-                match RemoteIO::new(&host_id, Some(&log_root.clone()), verbose) {
+            IOConfig::Remote(local_root, remote_root, verbose) => {
+                let sd =
+                    SessionData::new(host.to_string(), local_root.clone(), remote_root.clone())
+                        .unwrap();
+                match RemoteIO::new(sd.clone(), verbose) {
                     Ok(logger) => Arc::new(logger) as Arc<dyn IOHandler>,
                     Err(e) => panic!("ERROR boo {}", e),
                 }
             }
         };
 
-        let conn = Client::connect(dst, username, auth, output_handler.clone()).await;
+        let conn = Client::connect(dst, username, auth).await;
 
         SSHConnection {
             client: conn.unwrap(),
             host: String::from(host),
             username: String::from(username),
+            io_handler,
         }
+    }
+
+    pub async fn execute(&self, command: &str) -> Result<u32, SshError> {
+        let command = self.io_handler.update_command(command);
+        self.client.execute(&command, &self.io_handler).await
     }
 }
 
 pub struct SSHPool {
     conns: Vec<SSHConnection>,
-    output: Output,
+    io_config: IOConfig,
 }
 
 impl SSHPool {
@@ -70,23 +82,28 @@ impl SSHPool {
             .map(|pkf| Auth::KeyFile(std::path::PathBuf::from(&pkf), None))
     }
 
-    pub async fn new(hosts: &Vec<String>, username: &str, auth: Auth, output: Output) -> SSHPool {
+    pub async fn new(
+        hosts: &Vec<String>,
+        username: &str,
+        auth: Auth,
+        io_config: IOConfig,
+    ) -> SSHPool {
         let concurrency: usize = 10;
         let results = stream::iter(hosts)
-            .map(|host| SSHConnection::open(host, username, auth.clone(), output.clone()))
+            .map(|host| SSHConnection::open(host, username, auth.clone(), io_config.clone()))
             .buffer_unordered(concurrency)
             .collect::<Vec<SSHConnection>>()
             .await;
 
         SSHPool {
             conns: results,
-            output,
+            io_config,
         }
     }
 
     pub async fn execute(&self, command: &str) -> Vec<Result<u32, SshError>> {
         stream::iter(self.conns.iter())
-            .map(|c| c.client.execute(command))
+            .map(|c| c.execute(command))
             .buffer_unordered(10)
             .collect::<Vec<Result<u32, SshError>>>()
             .await

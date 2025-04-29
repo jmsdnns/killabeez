@@ -1,13 +1,22 @@
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use crate::ssh::files::SessionData;
+
+const STDOUT_FILE: &str = "stdout.log";
+const STDERR_FILE: &str = "stderr.log";
+
+/// The choices for output handling
+#[derive(Debug, Clone)]
+pub enum IOConfig {
+    Stream(PathBuf, bool),
+    Remote(PathBuf, Option<PathBuf>, bool),
+}
+
 /// A trait focused on managing stdout and stderr
 pub trait IOHandler: Send + Sync {
-    /// ID for host that implementation is handling output for
-    fn host_id(&self) -> &str;
-
     /// Processes streams of stdout from remote host
     fn stdout(&self, data: &[u8]) -> io::Result<()>;
 
@@ -23,27 +32,22 @@ pub trait IOHandler: Send + Sync {
 /// Write stdout & stderr to the remote filesystem, minimizing chat between
 /// local machine and remotes
 pub struct RemoteIO {
-    host_id: String,
+    session_data: SessionData,
     out_path: PathBuf,
     err_path: PathBuf,
     verbose: bool,
 }
 
 impl RemoteIO {
-    pub fn new(host_id: &str, log_root: Option<&PathBuf>, verbose: bool) -> io::Result<Self> {
-        let stdout = PathBuf::from("stdout.log");
-        let stderr = PathBuf::from("stderr.log");
+    pub fn new(session_data: SessionData, verbose: bool) -> io::Result<Self> {
+        let out_path =
+            PathBuf::from_iter([session_data.remote_root.clone(), PathBuf::from(STDOUT_FILE)]);
 
-        let (out_path, err_path) = match log_root {
-            Some(root) => (
-                PathBuf::from_iter([root.clone(), stdout]),
-                PathBuf::from_iter([root.clone(), stderr]),
-            ),
-            None => (stdout, stderr),
-        };
+        let err_path =
+            PathBuf::from_iter([session_data.remote_root.clone(), PathBuf::from(STDERR_FILE)]);
 
         Ok(Self {
-            host_id: host_id.to_string(),
+            session_data,
             out_path,
             err_path,
             verbose,
@@ -52,10 +56,6 @@ impl RemoteIO {
 }
 
 impl IOHandler for RemoteIO {
-    fn host_id(&self) -> &str {
-        &self.host_id
-    }
-
     /// stdout is not sent from remote unless verbose flag is used
     fn stdout(&self, data: &[u8]) -> io::Result<()> {
         if self.verbose {
@@ -81,14 +81,12 @@ impl IOHandler for RemoteIO {
     /// if `verbose` is true
     fn update_command(&self, cmd: &str) -> String {
         let outh = format!(
-            r#"awk '{{ print strftime("[%Y-%m-%d %H:%M:%S] {} "), $0, "" }}' >> {}"#,
-            &self.host_id(),
+            r#"awk '{{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0, "" }}' >> {}"#,
             &self.out_path.display()
         );
 
         let errh = format!(
-            r#"awk '{{ print strftime("[%Y-%m-%d %H:%M:%S] {}"), $0, "" }}' >> {}"#,
-            &self.host_id(),
+            r#"awk '{{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0, "" }}' >> {}"#,
             &self.err_path.display()
         );
 
@@ -103,32 +101,30 @@ impl IOHandler for RemoteIO {
 
 /// Threadsafe struct that handles writing output streams to local files
 pub struct StreamIO {
-    host_id: String,
+    session_data: SessionData,
     stdout_file: Arc<Mutex<File>>,
     stderr_file: Arc<Mutex<File>>,
     verbose: bool,
 }
 
 impl StreamIO {
-    pub fn new(host_id: &str, log_dir: &Path, verbose: bool) -> io::Result<Self> {
-        std::fs::create_dir_all(log_dir)?;
-
-        let stdout_path = log_dir.join(format!("{}_stdout.log", host_id));
+    pub fn new(session_data: SessionData, verbose: bool) -> io::Result<Self> {
+        let stdout_path = session_data.local_root.join(STDOUT_FILE);
         let stdout_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(stdout_path)?;
 
-        let stderr_path = log_dir.join(format!("{}_stderr.log", host_id));
+        let stderr_path = session_data.local_root.join(STDERR_FILE);
         let stderr_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(stderr_path)?;
 
         Ok(Self {
+            session_data,
             stdout_file: Arc::new(Mutex::new(stdout_file)),
             stderr_file: Arc::new(Mutex::new(stderr_file)),
-            host_id: host_id.to_string(),
             verbose,
         })
     }
@@ -148,10 +144,6 @@ impl StreamIO {
 }
 
 impl IOHandler for StreamIO {
-    fn host_id(&self) -> &str {
-        &self.host_id
-    }
-
     /// writes remote stdout to local file as it is streamed. will write copy
     /// to console if `verbose` is true
     fn stdout(&self, data: &[u8]) -> io::Result<()> {

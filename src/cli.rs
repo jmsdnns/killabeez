@@ -1,12 +1,14 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::aws::scenarios::{AWSNetwork, Swarm};
 use crate::aws::{ec2, tagged};
 use crate::config::SwarmConfig;
-use crate::ssh::client::Output;
 use crate::ssh::errors::SshError;
+use crate::ssh::files::DEFAULT_LOCAL_ROOT;
+use crate::ssh::io::IOConfig;
 use crate::ssh::pools::SSHPool;
+use aws_sdk_ec2::Client;
 
 const ABOUT_CLI: &str = "killabeez: a CLI for creating traffic jams of arbitrary scale";
 const DEFAULT_CONFIG: &str = "swarm.toml";
@@ -40,6 +42,9 @@ enum Commands {
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
 
+        #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
+        datadir: String,
+
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
 
@@ -51,6 +56,15 @@ enum Commands {
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
 
+        #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
+        datadir: String,
+
+        #[arg(short, long, default_value_t = false)]
+        verbose: bool,
+
+        #[arg(short, long, default_value_t = false)]
+        stream: bool,
+
         #[arg(required = true)]
         filename: String,
     },
@@ -58,6 +72,15 @@ enum Commands {
     Download {
         #[arg(short, long, value_name = "FILE")]
         config: Option<String>,
+
+        #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
+        datadir: String,
+
+        #[arg(short, long, default_value_t = false)]
+        verbose: bool,
+
+        #[arg(short, long, default_value_t = false)]
+        stream: bool,
 
         #[arg(required = true)]
         filename: String,
@@ -69,6 +92,35 @@ pub fn config_or_default(config: Option<String>) -> String {
         Some(filename) => filename.clone(),
         None => DEFAULT_CONFIG.to_string(),
     }
+}
+
+async fn load_ssh_pool(
+    client: &Client,
+    config: Option<String>,
+    datadir: String,
+    verbose: bool,
+    stream: bool,
+) -> SSHPool {
+    let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+    let network = AWSNetwork::load(client, &sc).await.unwrap();
+    let swarm = Swarm::load(client, &sc, &network).await.unwrap();
+    println!("{}", sc);
+    println!("{}", swarm);
+
+    let hosts = swarm
+        .instances
+        .iter()
+        .map(|i| i.ip.clone().unwrap())
+        .collect::<Vec<String>>();
+
+    let auth = SSHPool::load_key(&sc).unwrap();
+
+    let io_config = match stream {
+        true => IOConfig::Stream(PathBuf::from(datadir.clone()), verbose),
+        false => IOConfig::Remote(PathBuf::from(datadir.clone()), None, verbose),
+    };
+
+    SSHPool::new(&hosts, &sc.username.unwrap(), auth, io_config).await
 }
 
 pub async fn run() {
@@ -105,53 +157,29 @@ pub async fn run() {
 
         Commands::Exec {
             config,
-            stream,
+            datadir,
             verbose,
+            stream,
         } => {
             println!("[cli exec]");
 
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
-            let network = AWSNetwork::load(&client, &sc).await.unwrap();
-            let swarm = Swarm::load(&client, &sc, &network).await.unwrap();
-            println!("{}", sc);
-            println!("{}", swarm);
-
-            let hosts = swarm
-                .instances
-                .iter()
-                .map(|i| i.ip.clone().unwrap())
-                .collect::<Vec<String>>();
-
-            let auth = SSHPool::load_key(&sc).unwrap();
-            let output = match stream {
-                true => Output::Stream(PathBuf::from("beez"), verbose),
-                false => Output::Remote(PathBuf::from("."), verbose),
-            };
-            let ssh_pool = SSHPool::new(&hosts, &sc.username.unwrap(), auth, output).await;
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
 
             // NOTE: will become flexible soon
             ssh_pool.execute("hostname").await;
             ssh_pool.execute("ls -la").await;
         }
 
-        Commands::Upload { config, filename } => {
+        Commands::Upload {
+            config,
+            datadir,
+            verbose,
+            stream,
+            filename,
+        } => {
             println!("[cli upload]");
 
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
-            let network = AWSNetwork::load(&client, &sc).await.unwrap();
-            let swarm = Swarm::load(&client, &sc, &network).await.unwrap();
-            println!("{}", sc);
-            println!("{}", swarm);
-
-            let hosts = swarm
-                .instances
-                .iter()
-                .map(|i| i.ip.clone().unwrap())
-                .collect::<Vec<String>>();
-
-            let auth = SSHPool::load_key(&sc).unwrap();
-            let output = Output::Remote(PathBuf::from("kb.logs"), false);
-            let ssh_pool = SSHPool::new(&hosts, &sc.username.unwrap(), auth, output).await;
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
 
             let results = ssh_pool.upload(&filename).await;
             for r in results.iter() {
@@ -159,24 +187,17 @@ pub async fn run() {
             }
         }
 
-        Commands::Download { config, filename } => {
+        Commands::Download {
+            config,
+            datadir,
+            verbose,
+            stream,
+            filename,
+        } => {
             println!("[cli download]");
 
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
-            let network = AWSNetwork::load(&client, &sc).await.unwrap();
-            let swarm = Swarm::load(&client, &sc, &network).await.unwrap();
-            println!("{}", sc);
-            println!("{}", swarm);
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
 
-            let hosts = swarm
-                .instances
-                .iter()
-                .map(|i| i.ip.clone().unwrap())
-                .collect::<Vec<String>>();
-
-            let auth = SSHPool::load_key(&sc).unwrap();
-            let output = Output::Remote(PathBuf::from("kb.logs"), false);
-            let ssh_pool = SSHPool::new(&hosts, &sc.username.unwrap(), auth, output).await;
             let results = ssh_pool.download(&filename).await;
             for r in results.iter() {
                 println!("{}", r.as_ref().unwrap());
