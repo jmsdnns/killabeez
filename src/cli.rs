@@ -50,6 +50,9 @@ enum Commands {
 
         #[arg(short, long, default_value_t = false)]
         stream: bool,
+
+        #[arg(required = true)]
+        command: String,
     },
 
     Upload {
@@ -160,14 +163,12 @@ pub async fn run() {
             datadir,
             verbose,
             stream,
+            command,
         } => {
             println!("[cli exec]");
 
             let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
-
-            // NOTE: will become flexible soon
-            ssh_pool.execute("hostname").await;
-            ssh_pool.execute("ls -la").await;
+            ssh_pool.execute(&command).await;
 
             println!("[cli exec] fetching remote artifacts");
             ssh_pool.finish().await;
