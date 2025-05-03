@@ -163,7 +163,7 @@ pub async fn run() {
             println!("[cli tagged]");
             let sc = SwarmConfig::read(&config).unwrap();
 
-            tagged::all_beez_tags().await;
+            tagged::list_all_tagged(&sc).await;
         }
 
         Commands::Terminate { config } => {
