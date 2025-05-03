@@ -1,6 +1,6 @@
-_A tool for controlling pools of EC2 instances via SSH and SFTP._
-
 ![the words "killa beez" are on top of a swarm of robotic bees](docs/killabeez.jpg)
+
+_A tool for controlling pools of EC2 instances via SSH and SFTP._
 
 Let's say you have a web system somewhere and you want to know how much load it can handle. You could do some math and talk about what _should_ happen. You could also just start slamming the thing and measure when it collapses. This project wants you to spit on your hands, hoist the black flag, and slam the crap out of something.
 
