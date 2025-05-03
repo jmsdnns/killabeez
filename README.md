@@ -17,7 +17,7 @@ The main considerations:
 
 Going from nothing to running `ls -a` on 20 new instances looks like this:
 
-```shell
+```
 $ beez init
 $ beez exec "ls -a"
 $ beez terminate
@@ -26,7 +26,7 @@ $ beez terminate
 
 ## CLI
 
-```shell
+```
 killabeez: a CLI for creating traffic jams of arbitrary scale
 
 Usage: beez <COMMAND>
@@ -57,7 +57,7 @@ A pool of instances is called a _swarm_ and they are configured with a _swarm co
 
 Beez looks for a `swarm.toml` in the current directory by default but this can be overridden with `-c`. Running multiple swarms is as easy as having multiple configs, each with a unique tag name.
 
-```shell
+```
 beez exec -c myswarm.toml "ls -a"
 ```
 
