@@ -1,5 +1,5 @@
 use futures::{StreamExt, TryFutureExt, future, stream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::aws::ec2::Bee;
@@ -81,8 +81,11 @@ impl SSHConnection {
         for a in self.io_handler.artifacts() {
             let local_path = self.data.local_root.clone().join(&a);
             let remote_path = self.data.remote_root.clone().join(&a);
-            sftp.download(&remote_path.display().to_string(), local_path)
-                .await?;
+            sftp.download(
+                &remote_path.display().to_string(),
+                &local_path.display().to_string(),
+            )
+            .await?;
         }
 
         Ok(())
@@ -135,14 +138,19 @@ impl SSHPool {
             .await
     }
 
-    pub async fn upload(&self, filename: &str) -> Vec<Result<u64, SshError>> {
+    pub async fn upload(&self, source: &str) -> Vec<Result<u64, SshError>> {
+        let filename = Path::new(source)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
         stream::iter(self.conns.iter())
             .map(|c| {
                 Box::pin(async {
                     SFTPConnection::open(c)
                         .await
                         .unwrap()
-                        .upload(filename, filename)
+                        .upload(source, filename)
                         .await
                 })
             })
@@ -151,14 +159,19 @@ impl SSHPool {
             .await
     }
 
-    pub async fn download(&self, filename: &str) -> Vec<Result<u64, SshError>> {
+    pub async fn download(&self, source: &str) -> Vec<Result<u64, SshError>> {
+        let filename = Path::new(source)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
         stream::iter(self.conns.iter())
             .map(|c| {
                 Box::pin(async {
                     SFTPConnection::open(c)
                         .await
                         .unwrap()
-                        .download(filename, filename)
+                        .download(source, filename)
                         .await
                 })
             })

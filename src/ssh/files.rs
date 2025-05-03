@@ -63,11 +63,16 @@ impl<'a> SFTPConnection<'a> {
     }
 
     /// puts file on remote host
-    pub async fn upload(
-        &self,
-        source: impl AsRef<Path>,
-        destination: &str,
-    ) -> Result<u64, SshError> {
+    pub async fn upload(&self, source: impl AsRef<Path>, filename: &str) -> Result<u64, SshError> {
+        // remote root + filename
+        let destination = self
+            .ssh_conn
+            .data
+            .remote_root
+            .join(filename)
+            .display()
+            .to_string();
+
         let mut local_file = tokio::fs::File::open(source).await?;
         let mut remote_file = self
             .session
@@ -96,11 +101,16 @@ impl<'a> SFTPConnection<'a> {
     }
 
     /// pulls file from remote host
-    pub async fn download(
-        &self,
-        source: &str,
-        destination: impl AsRef<Path>,
-    ) -> Result<u64, SshError> {
+    pub async fn download(&self, source: &str, filename: &str) -> Result<u64, SshError> {
+        // local root + filename
+        let destination = self
+            .ssh_conn
+            .data
+            .local_root
+            .join(filename)
+            .display()
+            .to_string();
+
         let mut local_file = tokio::fs::File::create(destination).await?;
         let mut remote_file = self
             .session
