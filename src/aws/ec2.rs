@@ -26,11 +26,13 @@ const CIDR_VPC: &str = "10.0.0.0/16";
 const CIDR_SUBNET: &str = "10.0.1.0/24";
 const CIDR_GATEWAY: &str = "0.0.0.0/0";
 
+/// Makes a client for EC2
 pub async fn mk_client() -> Client {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::v2025_01_17()).await;
     Client::new(&config)
 }
 
+/// Puts a task to sleep
 pub async fn hold_on(duration: u64) {
     // give it a moment
     tokio::time::sleep(Duration::from_secs(duration)).await;
