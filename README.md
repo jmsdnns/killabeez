@@ -18,6 +18,7 @@ The main considerations:
 Going from nothing to running `ls -a` on 20 new instances looks like this:
 
 ```
+> export AWS_PROFILE="<your aws key>"
 > beez init
 > beez exec "ls -a"
 > beez terminate
