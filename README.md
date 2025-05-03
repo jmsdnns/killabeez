@@ -18,9 +18,9 @@ The main considerations:
 Going from nothing to running `ls -a` on 20 new instances looks like this:
 
 ```
-$ beez init
-$ beez exec "ls -a"
-$ beez terminate
+> beez init
+> beez exec "ls -a"
+> beez terminate
 ```
 
 At this point you'll have a `kb.data` directory with 20 directories inside, one for each host. Each host has a `stdout.log` and `stderr.log` with output streamed in as execution takes place.
@@ -28,6 +28,8 @@ At this point you'll have a `kb.data` directory with 20 directories inside, one 
 SFTP downloads work in a similar way. You can upload a file to all 20 remotes, but when you download from all 20 the file will go into each host level directory where `stdout.log` and `stderr.log` are.
 
 ```
+> beez upload "theway.gif"
+> beez download "theway.gif"
 > ls kb.data/*
 kb.data/3_236_14_153:
 stderr.log  stdout.log  theway.gif
@@ -71,7 +73,7 @@ A pool of instances is called a _swarm_ and they are configured with a _swarm co
 Beez looks for a `swarm.toml` in the current directory by default but this can be overridden with `-c`. Running multiple swarms is as easy as having multiple configs, each with a unique tag name.
 
 ```
-beez exec -c myswarm.toml "ls -a"
+> beez exec -c myswarm.toml "ls -a"
 ```
 
 There are more optional params available, mostly concerned with resource management, so they are explained in the next section.
@@ -115,7 +117,6 @@ Here's the list of optional params for swarm configs that we mentioned earlier:
 - `key_id`: use this key for SSH instead of importing one
 - `key_file`: path to ssh public key to import (must be set if `key_id` is not)
 - `ssh_cidr_block`: used to restrict SSH access to instances. it is recommended you limit access to just your machine which looks like: _your ip address/32_ or `11.22.33.44/32`
-
 
 
 ## Nah Mean
