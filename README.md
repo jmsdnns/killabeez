@@ -26,26 +26,18 @@ $ beez terminate
 
 ## CLI
 
-There are five main commands: 
-
-- `init` creates / loads resources for a swarm
-- `terminate` destroys swarm resources
-- `exec` runs a command in parallel on each instance in a swarm
-- `upload` put a file on every instance
-- `download` copy a file from every instance to your machine 
-
 ```shell
-> ./beez -h
 killabeez: a CLI for creating traffic jams of arbitrary scale
 
 Usage: beez <COMMAND>
 
 Commands:
-  init
-  terminate
-  exec
-  upload
-  download
+  init       Prepares resources for bringing swarm online
+  tagged     Lists all resources tagged by swarm config
+  terminate  Terminate all managed resources
+  exec       Execute command on swarm
+  upload     Upload a file to swarm
+  download   Download a file from swarm
   help       Print this message or the help of the given subcommand(s)
 
 Options:

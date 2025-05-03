@@ -23,88 +23,105 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Prepares resources for bringing swarm online
     Init {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
     },
 
+    /// Lists all resources tagged by swarm config
     Tagged {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
     },
 
+    /// Terminate all managed resources
     Terminate {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
     },
 
+    /// Execute command on swarm
     Exec {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
 
+        /// Directory path for storing swarm output
         #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
         datadir: String,
 
+        /// Also write stdout/stderr to console
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
 
+        /// Disable output streaming and write output to remote files until session end
         #[arg(short, long, default_value_t = false)]
-        stream: bool,
+        remote: bool,
 
+        /// A string containing the command to execute
         #[arg(required = true)]
         command: String,
     },
 
+    /// Upload a file to swarm
     Upload {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
 
-        #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
+        /// Directory path for storing swarm output
+        #[arg(short, long, value_name = "KB DATA", default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
         datadir: String,
 
+        /// Also write stdout/stderr to console
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
 
+        /// Disable output streaming and write output to remote files until session end
         #[arg(short, long, default_value_t = false)]
-        stream: bool,
+        remote: bool,
 
-        #[arg(required = true)]
-        filename: String,
+        /// the local file to be uploaded
+        #[arg(required = true, value_name = "FILE")]
+        source: String,
     },
 
+    /// Download a file from swarm
     Download {
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<String>,
+        /// Path to swarm config
+        #[arg(short, long, value_name = "SWARM CONFIG", default_value_t = DEFAULT_CONFIG.to_string())]
+        config: String,
 
+        /// Directory path for storing swarm output
         #[arg(short, long, default_value_t = DEFAULT_LOCAL_ROOT.to_string())]
         datadir: String,
 
+        /// Also write stdout/stderr to console
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
 
+        /// Disable output streaming and write output to remote files until session end
         #[arg(short, long, default_value_t = false)]
-        stream: bool,
+        remote: bool,
 
-        #[arg(required = true)]
-        filename: String,
+        /// the remote file to be downloaded
+        #[arg(required = true, value_name = "FILE")]
+        source: String,
     },
-}
-
-pub fn config_or_default(config: Option<String>) -> String {
-    match config {
-        Some(filename) => filename.clone(),
-        None => DEFAULT_CONFIG.to_string(),
-    }
 }
 
 async fn load_ssh_pool(
     client: &Client,
-    config: Option<String>,
+    config: String,
     datadir: String,
     verbose: bool,
-    stream: bool,
+    remote: bool,
 ) -> SSHPool {
-    let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+    let sc = SwarmConfig::read(&config).unwrap();
     let network = AWSNetwork::load(client, &sc).await.unwrap();
     let swarm = Swarm::load(client, &sc, &network).await.unwrap();
     println!("{}", sc);
@@ -118,9 +135,9 @@ async fn load_ssh_pool(
 
     let auth = SSHPool::load_key(&sc).unwrap();
 
-    let io_config = match stream {
-        true => IOConfig::Stream(PathBuf::from(datadir.clone()), verbose),
-        false => IOConfig::Remote(PathBuf::from(datadir.clone()), None, verbose),
+    let io_config = match remote {
+        true => IOConfig::Remote(PathBuf::from(datadir.clone()), None, verbose),
+        false => IOConfig::Stream(PathBuf::from(datadir.clone()), verbose),
     };
 
     SSHPool::new(&hosts, &sc.username.unwrap(), auth, io_config).await
@@ -134,7 +151,7 @@ pub async fn run() {
     match args.command {
         Commands::Init { config } => {
             println!("[cli init]");
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            let sc = SwarmConfig::read(&config).unwrap();
             println!("{}", sc);
 
             let network = AWSNetwork::init(&client, &sc).await.unwrap();
@@ -144,14 +161,14 @@ pub async fn run() {
 
         Commands::Tagged { config } => {
             println!("[cli tagged]");
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            let sc = SwarmConfig::read(&config).unwrap();
 
             tagged::all_beez_tags().await;
         }
 
         Commands::Terminate { config } => {
             println!("[cli terminate]");
-            let sc = SwarmConfig::read(&config_or_default(config)).unwrap();
+            let sc = SwarmConfig::read(&config).unwrap();
             println!("{}", sc);
 
             Swarm::drop(&client, &sc).await;
@@ -162,12 +179,12 @@ pub async fn run() {
             config,
             datadir,
             verbose,
-            stream,
+            remote,
             command,
         } => {
             println!("[cli exec]");
 
-            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, remote).await;
             ssh_pool.execute(&command).await;
 
             println!("[cli exec] fetching remote artifacts");
@@ -178,14 +195,14 @@ pub async fn run() {
             config,
             datadir,
             verbose,
-            stream,
-            filename,
+            remote,
+            source,
         } => {
             println!("[cli upload]");
 
-            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, remote).await;
 
-            let results = ssh_pool.upload(&filename).await;
+            let results = ssh_pool.upload(&source).await;
             for r in results.iter() {
                 println!("{}", r.as_ref().unwrap());
             }
@@ -195,14 +212,14 @@ pub async fn run() {
             config,
             datadir,
             verbose,
-            stream,
-            filename,
+            remote,
+            source,
         } => {
             println!("[cli download]");
 
-            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, stream).await;
+            let ssh_pool = load_ssh_pool(&client, config, datadir, verbose, remote).await;
 
-            let results = ssh_pool.download(&filename).await;
+            let results = ssh_pool.download(&source).await;
             for r in results.iter() {
                 println!("{}", r.as_ref().unwrap());
             }
