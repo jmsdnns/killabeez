@@ -9,11 +9,11 @@ Let's say you have a web system somewhere and you want to know how much load it 
 
 The main considerations:
 
-1. We need AWS resources
-2. We want to control some number of EC2 instances in parallel (via SSH & SFTP)
-3. We want to use this foundation to create execution plans for coordinated behaviors
-4. Flexible configuration
-5. Option to stream output to local files or stash output remotely and collect it all after
+1. Using or creating the necessary AWS resources
+2. Controlling ec2 instances in parallel using SSH & SFTP
+3. Coordinating parallel execution of complex tasks
+4. Flexible handling of each resource's stdout, stderr
+5. Keeping all streamed output, uploads, and downloads neatly managed per instance
 
 Going from nothing to running `ls -a` on 20 new instances looks like this:
 
@@ -21,6 +21,19 @@ Going from nothing to running `ls -a` on 20 new instances looks like this:
 $ beez init
 $ beez exec "ls -a"
 $ beez terminate
+```
+
+At this point you'll have a `kb.data` directory with 20 directories inside, one for each host. Each host has a `stdout.log` and `stderr.log` with output streamed in as execution takes place.
+
+SFTP downloads work in a similar way. You can upload a file to all 20 remotes, but when you download from all 20 the file will go into each host level directory where `stdout.log` and `stderr.log` are.
+
+```
+> ls kb.data/*
+kb.data/3_236_14_153:
+stderr.log  stdout.log  theway.gif
+
+kb.data/3_236_239_205:
+stderr.log  stdout.log  theway.gif
 ```
 
 
