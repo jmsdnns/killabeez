@@ -20,3 +20,4 @@ russh = "0.51.1"
 russh-sftp = "2.0.8"
 serde = { version = "1.0.218", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
+winnow = "0.7.9"
