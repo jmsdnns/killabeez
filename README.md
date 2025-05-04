@@ -54,6 +54,7 @@ Commands:
   exec       Execute command on swarm
   upload     Upload a file to swarm
   download   Download a file from swarm
+  plan       Run an execution plan
   help       Print this message or the help of the given subcommand(s)
 
 Options:
@@ -82,19 +83,14 @@ There are more optional params available, mostly concerned with resource managem
 
 ## Execution Plans
 
-I have built a parser for plans that hasn't been integrated yet. The _plan_ is to read a config like this and execute everything in a single SSH session.
+An execution plan, `commands.plan`, is a way to run a sequence of actions: exec, upload, or download.
 
-```yaml
-execute: echo "Take Five!"
-upload:
-  local_path: myscript.sh
-  remote_path: /tmp/myscript.sh
-download:
-  remote_path: /tmp/all-the-output.tar.gz
-  local_path: takefive.tar.gz
 ```
-
-Here is the prototype [plan parser](https://gist.github.com/jmsdnns/a83255fa1b0f0232e91c96f205a6a4ea). I just need more time to integrate it with beez.
+execute: echo "Take Five"
+upload: brubeck.sh
+download: /tmp/jam-session.tar.gz
+execute: echo "Love that sax!"
+```
 
 
 ## Resource Management
