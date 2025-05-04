@@ -92,6 +92,12 @@ download: /tmp/jam-session.tar.gz
 execute: echo "Love that sax!"
 ```
 
+And you can execute one like this:
+
+```
+> beez plan -p commands.plan
+```
+
 
 ## Resource Management
 
